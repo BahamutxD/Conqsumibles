@@ -36,6 +36,7 @@ CQ_Log = {
     hasFileExport = false, -- true when WriteCustomFile (CustomData/) is available
     exportFormat = "lua", -- "lua" or "json"
     verboseExport = false, -- true = full key names in export, false = shortened (default)
+    autoUploadOnFinalize = false, -- true = auto-upload to Discord bot when raid ends
     cachedTrackedConsumables = nil, -- Cached result of GetTrackedConsumables(), built at raid start
     -- Grace period removed: safe zone map handles cross-zone raids instead
 };
@@ -1073,6 +1074,14 @@ function CQ_Log_FinalizeRaid()
             end
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RAB Log] Raid ended but Nampower WriteCustomFile unavailable - data not saved.|r");
+        end
+
+        -- Auto-upload to Discord bot if enabled.
+        -- CQ_Log_DoUpload is defined in Conq_MinimapButton.lua; guard with a nil
+        -- check so raidlog.lua stays functional even if the minimap button isn't loaded.
+        if CQ_Log.autoUploadOnFinalize and CQ_Log_DoUpload then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00d4ff[Conq] Auto-uploading raid log to Discord...|r");
+            CQ_Log_DoUpload(true); -- silent=true (suppresses the "sending..." line)
         end
     end
     

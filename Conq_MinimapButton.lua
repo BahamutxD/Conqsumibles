@@ -46,6 +46,7 @@ local CQ_PersistedKeys = {
     "autoExportInterval",
     "checkInterval",
     "trackedZones",
+    "autoUploadOnFinalize",
 };
 
 function CQ_Settings_Save()
@@ -720,7 +721,7 @@ local function CreateStatusTab(parent)
     --   ROW 3 (2-col,  80px): Potions & Consumables | Money Drops
     --   Total: 10+168+1+100+1+80 = 360px  (58px breathing room)
     -- ================================================================
-    local BANNER_H = 74;   -- 3 buttons × 17px + gaps + top margin = 74px
+    local BANNER_H = 92;   -- 4 buttons × 17px + gaps + top margin
     local STRIP_H  = 48;   -- taller strip for stat chips
     local TOP_USED = BANNER_H + STRIP_H;  -- 122px
     local BTN_W    = 80;
@@ -799,6 +800,163 @@ local function CreateStatusTab(parent)
         end
     end);
     if not (CQ_Log and CQ_Log.hasFileExport) then exportBtn:Disable(); end
+
+    -- ── Upload to Discord button ─────────────────────────────────────────────
+    -- Sends LOG_START / LOG_END signals via SendAddonMessage so the TWoW-Chat
+    -- bot (prefix "CONQLOGGER") collects the raid data and posts it to Discord.
+    -- The bot buffers every addon message it receives between the two signals
+    -- and uploads the result as a .txt file to the configured Discord channel.
+    local uploadBtn = CreateFrame("Button", "CQ_Status_UploadBtn", tab);
+    uploadBtn:SetWidth(BTN_W); uploadBtn:SetHeight(BTN_H);
+    uploadBtn:SetPoint("TOPRIGHT", -4, -68);   -- one row below Export
+    do
+        local _fs = uploadBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall");
+        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Upload");
+        uploadBtn:SetFontString(_fs);
+        CQ_SkinButton(uploadBtn, "primary");
+    end
+
+    -- ── Shared upload function ────────────────────────────────────────────────
+    -- Called by the Upload button AND by auto-upload after FinalizeRaid.
+    -- silent=true suppresses the "sending..." chat message (for auto-upload).
+    function CQ_Log_DoUpload(silent)
+        if not CQ_Log then
+            if not silent then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Conq] Raid logger not loaded.|r");
+            end
+            return;
+        end
+        if not CQui_RaidLogs or not CQui_RaidLogs.raids then
+            if not silent then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Conq] No raid data to upload. Complete a raid session first.|r");
+            end
+            return;
+        end
+
+        if not CQ_Log_SerializeToLua then
+            if not silent then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Conq] Serializer not available - is Conq_raidlog.lua loaded?|r");
+            end
+            return;
+        end
+
+        -- Find the most recently completed raid.
+        -- currentRaidId is nil after FinalizeRaid(), so we search all stored raids
+        -- and pick the one with the highest (most recent) raidId string.
+        -- raidId format is YYYYMMDD_HHMMSS so lexicographic order = chronological order.
+        local uploadRaidId = nil;
+        local newestKey = "";
+        for raidId, _ in pairs(CQui_RaidLogs.raids) do
+            if raidId > newestKey then
+                newestKey    = raidId;
+                uploadRaidId = raidId;
+            end
+        end
+
+        -- Also consider the active raid if one is running (pre-finalize upload)
+        if CQ_Log.currentRaidId and CQ_Log.currentRaidId > newestKey then
+            uploadRaidId = CQ_Log.currentRaidId;
+        end
+
+        if not uploadRaidId then
+            if not silent then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Conq] No raid data to upload. Complete a raid session first.|r");
+            end
+            return;
+        end
+
+        local raid = CQui_RaidLogs.raids[uploadRaidId];
+        if not raid then
+            if not silent then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Conq] Raid data not found.|r");
+            end
+            return;
+        end
+
+        -- Build a label for the log filename (e.g. "MoltenCore_2025-06-01")
+        local label = (raid.zone or "Raid") .. "_" .. date("%Y-%m-%d");
+        label = string.gsub(label, "%s+", "_");
+
+        if not silent then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00d4ff[Conq] Sending raid log to Discord bot...|r");
+        end
+        SendAddonMessage("CONQLOGGER", "LOG_START " .. label, "GUILD");
+
+        -- Serialize the full raid table exactly as the export file does,
+        -- then split by newline and send each line as a separate addon message.
+        -- Vanilla 1.12 SendAddonMessage limit is 255 bytes; we cap at 240 to be safe.
+        -- Lines longer than 240 chars are split into multiple messages using a
+        -- continuation marker so the bot can reassemble them without data loss.
+        -- Format: "CONT:<chunk>" for continuation lines; the bot strips the prefix
+        -- and concatenates the chunk onto the previous line before processing.
+        local serialized = "CQ_RaidExport = " .. CQ_Log_SerializeToLua(raid, 0, 10, true) .. ";";
+        local linesSent = 0;
+        local MAX_LEN = 240;
+        local CONT_PREFIX = "CONT:";
+        local CONT_OVERHEAD = string.len(CONT_PREFIX); -- 5 chars
+
+        -- Walk the serialized string line by line
+        local pos = 1;
+        local len = string.len(serialized);
+        while pos <= len do
+            local nl = string.find(serialized, "\n", pos, true);
+            local line;
+            if nl then
+                line = string.sub(serialized, pos, nl - 1);
+                pos  = nl + 1;
+            else
+                line = string.sub(serialized, pos);
+                pos  = len + 1;
+            end
+
+            -- Skip blank lines to save message budget
+            if string.len(line) == 0 then
+                -- nothing
+            elseif string.len(line) <= MAX_LEN then
+                SendAddonMessage("CONQLOGGER", line, "GUILD");
+                linesSent = linesSent + 1;
+            else
+                -- Line is too long: send the first chunk as-is, then remainder
+                -- as CONT: prefixed chunks so the bot can reassemble.
+                local chunkPos = 1;
+                local lineLen = string.len(line);
+                local firstChunk = true;
+                while chunkPos <= lineLen do
+                    local chunkMax = firstChunk and MAX_LEN or (MAX_LEN - CONT_OVERHEAD);
+                    local chunk = string.sub(line, chunkPos, chunkPos + chunkMax - 1);
+                    chunkPos = chunkPos + chunkMax;
+                    if firstChunk then
+                        SendAddonMessage("CONQLOGGER", chunk, "GUILD");
+                        firstChunk = false;
+                    else
+                        SendAddonMessage("CONQLOGGER", CONT_PREFIX .. chunk, "GUILD");
+                    end
+                    linesSent = linesSent + 1;
+                end
+            end
+        end
+
+        SendAddonMessage("CONQLOGGER", "LOG_END", "GUILD");
+
+        DEFAULT_CHAT_FRAME:AddMessage(
+            "|cff00d4ff[Conq] |cff00ff00Done!|r |cffaaaaaa" .. linesSent ..
+            " lines sent. Bot will post the .txt to Discord shortly.|r");
+    end
+
+    uploadBtn:SetScript("OnClick", function()
+        CQ_Log_DoUpload(false);
+    end);
+
+    -- Tooltip for the upload button
+    uploadBtn:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_LEFT");
+        GameTooltip:AddLine("Upload to Discord", 0.0, 0.831, 1.0);
+        GameTooltip:AddLine("Sends the current raid log to", 0.7, 0.7, 0.7);
+        GameTooltip:AddLine("the Discord bot via addon channel.", 0.7, 0.7, 0.7);
+        GameTooltip:AddLine("Bot will post a .txt file to #logs.", 0.5, 0.5, 0.5);
+        GameTooltip:Show();
+    end);
+    uploadBtn:SetScript("OnLeave", function() GameTooltip:Hide(); end);
 
     -- ================================================================
     -- STATS STRIP: 4 chips with more breathing room
@@ -1250,6 +1408,15 @@ local function CreateOptionsTab(parent)
     sunderCheck:SetScript("OnClick", function()
         if not CQ_Log then return; end
         CQ_Log.trackSunders = this:GetChecked() and true or false;
+        CQ_Settings_Save();
+    end);
+    yOff = yOff + CHK;
+
+    local autoUploadCheck = OptCheck("CQ_Opt_AutoUploadCheck",
+        "Auto-upload to Discord when raid ends");
+    autoUploadCheck:SetScript("OnClick", function()
+        if not CQ_Log then return; end
+        CQ_Log.autoUploadOnFinalize = this:GetChecked() and true or false;
         CQ_Settings_Save();
     end);
     yOff = yOff + CHK + 4;
@@ -3457,6 +3624,9 @@ function CQ_Config_Update()
 
     local sunderCb = getglobal("CQ_Opt_SunderCheck");
     if sunderCb then sunderCb:SetChecked(CQ_Log.trackSunders); if sunderCb.CQ_SyncVisual then sunderCb.CQ_SyncVisual(); end end
+
+    local autoUploadCb = getglobal("CQ_Opt_AutoUploadCheck");
+    if autoUploadCb then autoUploadCb:SetChecked(CQ_Log.autoUploadOnFinalize); if autoUploadCb.CQ_SyncVisual then autoUploadCb.CQ_SyncVisual(); end end
 
     -- Auto-export interval editbox
     local exportEdit = getglobal("CQ_Opt_ExportIntervalEdit");
