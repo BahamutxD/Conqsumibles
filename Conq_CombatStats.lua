@@ -288,7 +288,7 @@ local function CQ_CS_RegisterCC(spellID, casterName)
     -- This is a heuristic and may not always find the right mob, but it is
     -- harmless if it misses — we simply won't record the CC in the active table.
     local ccName = ccType; -- e.g. "Polymorph" or "Shackle Undead"
-    local unitsToScan = { "target", "focus" };
+    local unitsToScan = { "target" };  -- "focus" is not valid in vanilla WoW (TBC+)
     -- Nampower exposes "nameplate1".."nameplate20" on some builds; skip here
     -- as it is not universally available.
     for _, unit in ipairs(unitsToScan) do
