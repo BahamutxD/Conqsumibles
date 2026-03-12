@@ -1,79 +1,73 @@
 -- Conq_ConsumableIntegration.lua
 -- Connects CQ_ConsTracker to RABuffs raid logging.
+-- FIXED VERSION: Corrects castTrackedConsumables key format and prevents ghost consumables
 --
--- SINGLE SOURCE OF TRUTH: All consumable definitions now live in Conq_buffs.lua.
--- To add a new consumable, edit ONLY Conq_buffs.lua — this file derives
--- CQ_ConsTracker_KeyMap, CQ_ConsTracker_Tracked, CQ_Log_ConsumableDurations,
--- and all OH wepbuffonly entries automatically at load time.
+-- WEAPON ENCHANTS NOW WORK: Testing showed that weapon oils and sharpening stones
+-- DO fire cast event with "START" and "CAST" events (not MAINHAND/OFFHAND as
+-- originally thought). The spell IDs are mapped below in CQ_ConsTracker_KeyMap.
 --
--- Weapon enchants: add only the MH base key in CQ_Buffs with a castSpells table.
--- The OH entry (key + "oh") is generated below.
+-- This integration handles both the cast event detection and provides a
+-- supplementary weapon enchant poller as a fallback for the local player.
 
--- ---------------------------------------------------------------------------
--- CQ_ConsTracker_KeyMap: spellID -> buffKey
--- Auto-derived from CQ_Buffs[key].castSpells at load time.
--- Do NOT edit this table directly — edit CQ_Buffs in Conq_buffs.lua instead.
--- ---------------------------------------------------------------------------
-CQ_ConsTracker_KeyMap = {};
+-- Map spell IDs to RABuffs consumable keys.
+-- These are the ITEM USE spell IDs from cast event MAINHAND/OFFHAND events.
+-- Verified against SuperWowCombatLogger (core.lua).
+-- Both MH and OH versions of the same item share the same spell ID and map to
+-- the base buffKey - the slot is determined by the MAINHAND/OFFHAND event type.
+CQ_ConsTracker_KeyMap = {
+    -- Goblin Sapper Charge
+    [13241] = "goblinsapper",
 
--- ---------------------------------------------------------------------------
--- Auto-generate OH entries in CQ_Buffs for every wepbuffonly MH key.
--- Keeps Conq_buffs.lua clean (define the MH key once; OH is free).
--- ---------------------------------------------------------------------------
-local function CQ_ConsInt_GenerateOHEntries()
-    local toAdd = {};
-    for buffKey, def in pairs(CQ_Buffs) do
-        if def.type == "wepbuffonly" and def.useOn == "weapon" then
-            local ohKey = buffKey .. "oh";
-            if not CQ_Buffs[ohKey] then
-                toAdd[ohKey] = {
-                    type        = "wepbuffonly",
-                    useOn       = "weaponOH",
-                    name        = def.name .. " (offhand)",
-                    identifiers = { },
-                    itemId      = def.itemId,
-                    duration    = def.duration,
-                    -- OH entries share the same castSpells IDs; the OFFHAND event
-                    -- type distinguishes them at detection time.
-                };
-            end
-        end
-    end
-    for k, v in pairs(toAdd) do
-        CQ_Buffs[k] = v;
-    end
-end
+    -- Mana Oils
+    [25123] = "brillmanaoil",           -- Brilliant Mana Oil
+    [20747] = "lessermanaoil",          -- Lesser Mana Oil (old ID 25121 was wrong)
 
--- ---------------------------------------------------------------------------
--- Auto-derive CQ_ConsTracker_KeyMap and CQ_ConsTracker_Tracked from CQ_Buffs.
--- Called once during CQ_ConsInt_Init() after CQ_Buffs is fully loaded.
--- ---------------------------------------------------------------------------
-local function CQ_ConsInt_BuildTrackedTables()
-    CQ_ConsTracker_KeyMap = {};
-    -- CQ_ConsTracker_Tracked is defined in Conq_ConsumableTracker.lua; we
-    -- populate it here rather than in that file so the data stays in one place.
-    for buffKey, def in pairs(CQ_Buffs) do
-        if def.castSpells then
-            for _, spell in ipairs(def.castSpells) do
-                CQ_ConsTracker_KeyMap[spell.id] = buffKey;
-                CQ_ConsTracker_Tracked[spell.id] = spell.name;
-            end
-        end
-    end
-end
+    -- Wizard Oils
+    [25122] = "brilliantwizardoil",     -- Brilliant Wizard Oil
+    [28898] = "blessedwizardoil",       -- Blessed Wizard Oil (old ID 68567 was wrong)
+    [25121] = "wizardoil",              -- Wizard Oil (old ID 25080 was wrong)
 
--- ---------------------------------------------------------------------------
--- Auto-derive CQ_Log_ConsumableDurations from CQ_Buffs.duration fields.
--- Entries already present in CQ_Log_ConsumableDurations (e.g. hand-written
--- legacy overrides) are NOT overwritten.
--- ---------------------------------------------------------------------------
-local function CQ_ConsInt_BuildDurationsTable()
-    for buffKey, def in pairs(CQ_Buffs) do
-        if def.duration ~= nil and CQ_Log_ConsumableDurations[buffKey] == nil then
-            CQ_Log_ConsumableDurations[buffKey] = def.duration;
-        end
-    end
-end
+    -- Sharpening Stones
+    [16138] = "densesharpeningstone",       -- Dense Sharpening Stone
+    [22756] = "elementalsharpeningstone",   -- Elemental Sharpening Stone (old ID 16139 was wrong)
+    [28891] = "consecratedstone",           -- Consecrated Sharpening Stone (old ID 24674 was wrong)
+
+    -- Weightstones
+    [16622] = "denseweightstone",           -- Dense Weightstone (old ID 16141 was wrong)
+
+    -- Misc Weapon Oils
+    [3829]  = "frostoil",               -- Frost Oil
+    [3594]  = "shadowoil",              -- Shadow Oil
+
+    -- Rogue Poisons
+    -- All ranks map to the base buffKey — only the application matters,
+    -- there is no buff bar to poll for other players.
+    [11357] = "deadlypoison",           -- Deadly Poison V
+    [11356] = "deadlypoison",           -- Deadly Poison IV
+    [11355] = "deadlypoison",           -- Deadly Poison III
+    [2824]  = "deadlypoison",           -- Deadly Poison II
+    [2823]  = "deadlypoison",           -- Deadly Poison
+
+    [8679]  = "instantpoison",          -- Instant Poison VI
+    [8688]  = "instantpoison",          -- Instant Poison V
+    [8687]  = "instantpoison",          -- Instant Poison IV
+    [8686]  = "instantpoison",          -- Instant Poison III
+    [8685]  = "instantpoison",          -- Instant Poison II
+    [8680]  = "instantpoison",          -- Instant Poison
+
+    [13219] = "woundpoison",            -- Wound Poison V
+    [13218] = "woundpoison",            -- Wound Poison IV
+    [13223] = "woundpoison",            -- Wound Poison III
+    [13222] = "woundpoison",            -- Wound Poison II
+    [13220] = "woundpoison",            -- Wound Poison
+
+    [5763]  = "mindnumbingpoison",      -- Mind-numbing Poison III
+    [8694]  = "mindnumbingpoison",      -- Mind-numbing Poison II
+    [5761]  = "mindnumbingpoison",      -- Mind-numbing Poison
+
+    [3408]  = "cripplingpoison",        -- Crippling Poison II
+    [3409]  = "cripplingpoison",        -- Crippling Poison
+};
 
 -- Buffs that share textures and need special handling
 -- Key: texture name, Value: table of spellID -> buffKey
@@ -545,15 +539,6 @@ CQ_ConsInt_Initialized = false;
 function CQ_ConsInt_Init()
     if CQ_ConsInt_Initialized then return; end
     CQ_ConsInt_Initialized = true;
-
-    -- Generate OH wepbuffonly entries in CQ_Buffs (e.g. "brillmanaoiloh").
-    CQ_ConsInt_GenerateOHEntries();
-
-    -- Derive CQ_ConsTracker_KeyMap + CQ_ConsTracker_Tracked from CQ_Buffs.castSpells.
-    CQ_ConsInt_BuildTrackedTables();
-
-    -- Derive CQ_Log_ConsumableDurations from CQ_Buffs.duration (no overwrite).
-    CQ_ConsInt_BuildDurationsTable();
 
     CQ_ConsTracker_BuildReverseLookup();
 

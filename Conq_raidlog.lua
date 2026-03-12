@@ -147,22 +147,135 @@ function CQ_Log_IsActiveSafeZone(zone)
 end
 
 -- Consumable durations in seconds (can be edited for custom server values)
--- CQ_Log_ConsumableDurations: buffKey -> duration in seconds.
---
--- This table is populated automatically at load time by
--- CQ_ConsInt_BuildDurationsTable() in Conq_ConsumableIntegration.lua,
--- which reads the duration field from each CQ_Buffs entry.
---
--- To change a duration: edit the duration field on the CQ_Buffs entry in
--- Conq_buffs.lua. You only need to add an entry here if you want to OVERRIDE
--- a value that is already defined in CQ_Buffs, or for keys that have no
--- CQ_Buffs entry (e.g. legacy keys kept for backward compat).
 CQ_Log_ConsumableDurations = {
-    -- Legacy key kept for backward compatibility with old saved variables.
-    bogling = 600,
-    -- Class buffs are tracked by SPELL_GO (stored in raid.spells, not consumables).
-    -- Do NOT add class buff keys here; they would cause the buff scanner to
-    -- double-count every player who has the buff.
+    -- Flasks (2 hours = 7200 seconds)
+    anyflask = 7200,
+    titans = 7200,
+    wisdom = 7200,
+    chromaticres = 7200,
+    flask = 7200, -- Supreme Power
+    
+    -- Elixirs - Battle
+    giants = 3600, -- 1 hour
+    mongoose = 3600, -- 1 hour
+    greateragilityelixir = 3600,
+    agilityelixir = 3600,
+    firewater = 1200, -- 20 minutes
+    demonslaying = 300, -- 5 minutes
+    
+    -- Elixirs - Guardian 
+    elixirfortitude = 3600, -- Elixir of Fortitude
+    supdef = 3600, -- Superior Defense Elixir 1 hour
+    
+    -- Spell power elixirs
+    shadowpower = 3600, 
+    greaterarcanepower = 3600,
+    greaterfrostpower = 3600,
+    greaterfirepower = 3600,
+    greaternaturepower = 3600,
+    greaterarcane = 3600, -- Greater Arcane Elixir
+    dreamshard = 3600,
+    dreamtonic = 1200,
+    arcaneelixir = 3600, -- 30 minutes-?
+    frostpower = 3600,
+    firepowerelixir = 3600,
+    elixirofthesages = 3600,
+    
+    -- Protection potions (1 hour = 3600 seconds; normal pots removed, greater only)
+    frozenrune = 3600, -- 1 hour frozen rune
+    
+    -- Utility potions
+    mageblood = 3600,        -- Mageblood Potion – 1 hour mana regen buff
+    restorativepotion = 30, -- 30 seconds
+    freeactionpotion = 30, -- 30 seconds
+    limitinvulpotion = 6, -- 6 seconds
+    
+    -- Zanza potions (2 hours)
+    spiritofzanza = 7200,
+    swiftnessofzanza = 7200,
+    sheenofzanza = 7200,
+    
+    -- Juju buffs
+    jujupower = 1800, -- 30 minutes
+    jujumight = 600, -- 10 minutes
+    jujuchill = 600,
+    jujuflurry = 20, 
+    jujuescape = 10, 
+    jujuember = 600,
+    jujuguile = 1800,
+    
+    -- Food & Drink buffs (15 minutes = 900s).
+    -- All cast spell IDs confirmed via DCL in-game testing.
+    squid             = 900,  -- Grilled Squid              (cast 18230)
+    nightfinsoup      = 900,  -- Nightfin Soup              (cast 18233)
+    tuber             = 900,  -- Runn Tum Tuber Surprise    (cast 22731)
+    desertdumpling    = 900,  -- Smoked Desert Dumpling / Power Mushroom (cast 24800)
+    mushroomstam      = 900,  -- Hardened Mushroom          (cast 25660)
+    tenderwolf        = 900,  -- Tender Wolf Steak          (cast 10256)
+    sagefish          = 900,  -- Sagefish Delight           (cast 25888)
+    dragonbreathchili = 900,  -- Dragonbreath Chili         (cast 15852)
+    gurubashigumbo    = 900,  -- Gurubashi Gumbo            (cast 46084)
+    telabimmedley     = 900,  -- Tel'Abim Medley            (cast 57045)
+    telabimdelight    = 900,  -- Tel'Abim Delight           (cast 57043)
+    telabimsurprise   = 900,  -- Tel'Abim Surprise          (cast 57055)
+    gilneashotstew    = 900,  -- Gilneas Hot Stew           (cast 45626)
+    gordokgreengrog   = 900,  -- Gordok Green Grog          (cast 22789)
+    rumseyrum         = 900,  -- Rumsey Rum Black Label     (cast 25804)
+    merlot            = 900,  -- Medivh's Merlot            (cast 57106)
+    merlotblue        = 900,  -- Medivh's Merlot Blue Label (cast 57107)
+    herbalsalad       = 900,  -- Herbal Salad               (cast 49552)
+    
+    -- Concoctions 
+    arcanegiants = 3600,
+    emeraldmongoose = 3600,
+    dreamwater = 1200,
+    
+    -- Weapon buffs (30 minutes = 1800 seconds)
+    brillmanaoil = 1800,
+    brilliantwizardoil = 1800,
+    blessedwizardoil = 3600,      -- 1 hour (Naxx oil)
+    lessermanaoil = 1800,
+    wizardoil = 1800,
+    frostoil = 1800,
+    shadowoil = 1800,
+    consecratedstone = 3600,      -- 1 hour (Naxx stone)
+    densesharpeningstone = 1800,
+    elementalsharpeningstone = 1800,
+    denseweightstone = 1800,
+    
+    -- Explosives (no persistent buff - duration 0, tracked by cast count only)
+    goblinsapper = 0,
+    
+    -- Blasted Lands buffs (all 1 hour)
+    roids = 3600,           -- Winterfall Firewater (+Strength)
+    scorpok = 3600,         -- Ground Scorpok Assay (+Agility)
+    cerebralcortex = 3600,  -- Cerebral Cortex Compound (+Intellect)
+    lungJuice = 3600,       -- Lung Juice Cocktail (+Spirit)
+    gizzardgum = 3600,      -- Gizzard Gum (+Stamina)
+    bogling = 600, -- legacy key, kept for backward compat
+    oilofimmolation = 15, 
+    
+    -- Greater protection potions (1 hour = 3600 seconds)
+    greatershadowpot = 3600,
+    greaterfirepot   = 3600,
+    greaterfrostpot  = 3600,
+    greaternaturepot = 3600,
+    greaterholypot   = 3600,
+    greaterarcanepot = 3600,
+    
+    -- Event foods
+
+    -- ---- Class Buffs -------------------------------------------------------
+    -- Stored per CASTER (who cast it), tracked via SPELL_GO cast counts.
+    -- Duration values approximate typical buff duration; cast count is the key metric.
+    -- Single-target and group variants are tracked separately.
+    -- NOTE: Class buffs (ai, ab, pwf, pof, ds, pos, sprot, posp,
+    --       bos/gbos, bow/gbow, bok/gbok, bol/gbol, bom/gbom, bosanc/gbosanc,
+    --       motw, gotw) are intentionally NOT listed here.
+    -- They are tracked by WHO CAST THEM via SPELL_GO (CQ_ClassBuffCastFrame)
+    -- and stored in raid.spells, not raid.players[name].consumables.
+    -- Adding them here would cause the periodic buff scanner to detect them on
+    -- every player who HAS the buff, which is not what we want.
 };
 
 -- Potion/Tea tracking patterns
@@ -364,10 +477,9 @@ end
 
 -- ============================================================================
 
--- Goblin Sapper Charge and Stratholme Holy Water both fire many damage hits per
--- detonation (one per target hit). We deduplicate by recording the last time we
--- counted one for each player; any further hits within SAPPER_DEDUP_WINDOW seconds
--- are ignored. Holy Water shares the same dedup table keyed by "<player>_holywater".
+-- Goblin Sapper Charge fires many damage hits per detonation (one per target hit).
+-- We deduplicate by recording the last time we counted a sapper for each player;
+-- any further hits within SAPPER_DEDUP_WINDOW seconds are ignored.
 CQ_Log_SapperDedup = {};   -- [playerName] = GetTime() of last counted detonation
 CQ_Log_SAPPER_DEDUP_WINDOW = 2; -- seconds
 
@@ -1131,28 +1243,12 @@ CQ_Log_ConsumableCatalog = {
             { key = "herbalsalad",      label = "Herbal Salad" },
         },
     },
-    -- ---- Rogue Poisons --------------------------------------------------
-    -- Tracked by cast event (SPELL_GO) via CQ_ConsTracker_KeyMap.
-    -- No buff bar visible for other players; application event only.
-    {
-        header = "Rogue Poisons",
-        items = {
-            { key = "deadlypoison",      label = "Deadly Poison",       itemId = 20844 },
-            { key = "instantpoison",     label = "Instant Poison",      itemId = 8928  },
-            { key = "woundpoison",       label = "Wound Poison",        itemId = 10922 },
-            { key = "mindnumbingpoison", label = "Mind-numbing Poison", itemId = 9186  },
-            { key = "cripplingpoison",   label = "Crippling Poison",    itemId = 3776  },
-            { key = "corrosivepoison",   label = "Corrosive Poison",    itemId = 47409 },
-            { key = "dissolventpoison",  label = "Dissolvent Poison",   itemId = 54010 },
-        },
-    },
     -- ---- Explosives -----------------------------------------------------
     {
         header = "Explosives",
         items = {
-            { key = "goblinsapper",         label = "Goblin Sapper Charge" ,     itemId = 10646 },
-            { key = "stratholmeholywater",  label = "Stratholme Holy Water",     itemId = 13180 },
-            { key = "oilofimmolation",      label = "Oil of Immolation" ,        itemId = 8956  },
+            { key = "goblinsapper",    label = "Goblin Sapper Charge" , itemId = 10646 },
+            { key = "oilofimmolation", label = "Oil of Immolation" , itemId = 8956 },
         },
     },
     -- ---- Concoctions ----------------------------------------------------
@@ -2103,40 +2199,29 @@ function CQ_Log_WeaponEnchantEvent()
     end
 end
 
--- Combat log event for Goblin Sapper Charge and Stratholme Holy Water tracking.
--- Both items hit every enemy in range, so one use generates many damage messages.
--- We use a per-player dedup window to count only one use regardless of targets hit.
+-- Combat log event for Goblin Sapper Charge tracking.
+-- The sapper hits every enemy (and the caster) in range, so one detonation generates
+-- many CHAT_MSG_SPELL_SELF_DAMAGE messages.  We use a per-player dedup window to
+-- count only one use regardless of how many targets were hit.
 --
--- Self message:   "Your <item> hits <target> for X."         (CHAT_MSG_SPELL_SELF_DAMAGE)
--- Others message: "PlayerName's <item> hits <target> for X." (CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE)
+-- Self message:   "Your Goblin Sapper Charge hits <target> for X."       (CHAT_MSG_SPELL_SELF_DAMAGE)
+-- Others message: "PlayerName's Goblin Sapper Charge hits <target> for X." (CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE)
 function CQ_Log_SapperEvent()
     if not CQ_Log.isLogging or not CQ_Log.currentRaidId then return; end
 
     local message = arg1;
-
-    -- Identify which item fired and its buffKey / dedup key
-    local buffKey, dedupKey, spellLabel;
-    if string.find(message, "Goblin Sapper Charge") then
-        buffKey   = "goblinsapper";
-        dedupKey  = "sapper";
-        spellLabel = "Goblin Sapper Charge";
-    elseif string.find(message, "Stratholme Holy Water") then
-        buffKey   = "stratholmeholywater";
-        dedupKey  = "holywater";
-        spellLabel = "Stratholme Holy Water";
-    else
-        return;
-    end
+    if not string.find(message, "Goblin Sapper Charge") then return; end
 
     local raid = CQui_RaidLogs.raids[CQ_Log.currentRaidId];
     if not raid then return; end
 
-    -- Determine who used the item
+    -- Determine who used the sapper
     local playerName;
     if event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
         playerName = UnitName("player");
     elseif event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE" then
-        local _, _, extractedName = string.find(message, "^(.+)'s " .. spellLabel);
+        -- "PlayerName's Goblin Sapper Charge hits ..."
+        local _, _, extractedName = string.find(message, "^(.+)'s Goblin Sapper Charge");
         if extractedName and not string.find(extractedName, "%(") then
             playerName = extractedName;
         end
@@ -2156,14 +2241,13 @@ function CQ_Log_SapperEvent()
     end
     if not isInRaid then return; end
 
-    -- Deduplicate: ignore if we already counted this item for this player very recently
+    -- Deduplicate: ignore if we already counted a sapper for this player very recently
     local now = GetTime();
-    local dedupFullKey = playerName .. "_" .. dedupKey;
-    local lastUse = CQ_Log_SapperDedup[dedupFullKey] or 0;
-    if (now - lastUse) < CQ_Log_SAPPER_DEDUP_WINDOW then
+    local lastSapper = CQ_Log_SapperDedup[playerName] or 0;
+    if (now - lastSapper) < CQ_Log_SAPPER_DEDUP_WINDOW then
         return;
     end
-    CQ_Log_SapperDedup[dedupFullKey] = now;
+    CQ_Log_SapperDedup[playerName] = now;
 
     -- Record in players consumables table
     if not raid.players[playerName] then
@@ -2185,8 +2269,8 @@ function CQ_Log_SapperEvent()
         raid.players[playerName].consumables = {};
     end
 
-    if not raid.players[playerName].consumables[buffKey] then
-        raid.players[playerName].consumables[buffKey] = {
+    if not raid.players[playerName].consumables["goblinsapper"] then
+        raid.players[playerName].consumables["goblinsapper"] = {
             applications = 0,
             totalUptime = 0,
             lastCheckHad = false,
@@ -2195,13 +2279,13 @@ function CQ_Log_SapperEvent()
         };
     end
 
-    raid.players[playerName].consumables[buffKey].applications =
-        raid.players[playerName].consumables[buffKey].applications + 1;
-    raid.players[playerName].consumables[buffKey].lastCheckTime = GetTime();
+    raid.players[playerName].consumables["goblinsapper"].applications =
+        raid.players[playerName].consumables["goblinsapper"].applications + 1;
+    raid.players[playerName].consumables["goblinsapper"].lastCheckTime = GetTime();
 
     if CQ_Log.debugConsumables then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[EXPLOSIVE] " .. playerName .. " used " .. spellLabel .. " (total: " ..
-            raid.players[playerName].consumables[buffKey].applications .. ")|r");
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[SAPPER] " .. playerName .. " used Goblin Sapper Charge (total: " ..
+            raid.players[playerName].consumables["goblinsapper"].applications .. ")|r");
     end
 end
 
