@@ -31,67 +31,13 @@ CQ_GuidDB = {};
 
 -- Consumables to track via UNIT_CASTEVENT (spell ID -> display name).
 --
--- WEAPON ENCHANTS: Weapon enchants fire "START" (begins casting) and "CAST" (successfully casts).
--- These are the ITEM USE spell IDs, not the buff/aura IDs.
+-- NOTE: This table is populated automatically at load time by
+-- CQ_ConsInt_BuildTrackedTables() in Conq_ConsumableIntegration.lua,
+-- which derives it from the castSpells fields in CQ_Buffs (Conq_buffs.lua).
 --
--- Regular consumables fire "START" (begins casting) and "CAST" (successfully casts).
--- For instant items, only "CAST" fires.
-CQ_ConsTracker_Tracked = {
-    -- WEAPON ENCHANTS
-    -- Detected via UNIT_CASTEVENT with event type "MAINHAND" or "OFFHAND".
-    -- Spell IDs verified against SuperWowCombatLogger (core.lua) which has
-    -- confirmed these fire on real Turtle WoW / vanilla-era servers.
-
-    -- Mana Oils
-    [25123] = "Brilliant Mana Oil",            -- +12 mp5, +25 healing, 60 min  (RPLL verified)
-    [20747] = "Lesser Mana Oil",               -- +8 mp5, 30 min                (RPLL verified)
-
-    -- Wizard Oils
-    [25122] = "Brilliant Wizard Oil",          -- +36 spell dmg, +1% crit, 60 min (RPLL verified)
-    [28898] = "Blessed Wizard Oil",            -- Naxx, 1 hour                  (RPLL verified)
-    [25121] = "Wizard Oil",                    -- +16 spell dmg, 30 min         (RPLL verified)
-
-    -- Sharpening Stones
-    [16138] = "Dense Sharpening Stone",        -- +8 dmg, 30 min    (RPLL verified)
-    [22756] = "Elemental Sharpening Stone",    -- +2% crit, 30 min  (RPLL verified)
-    [28891] = "Consecrated Sharpening Stone",  -- Naxx, 1 hour      (RPLL verified)
-
-    -- Weightstones
-    [16622] = "Dense Weightstone",             -- +8 dmg, 30 min    (RPLL verified)
-
-    -- Misc Weapon Oils
-    [3829]  = "Frost Oil",                     -- (RPLL verified)
-    [3594]  = "Shadow Oil",                    -- (RPLL verified)
-
-    -- Goblin Sapper Charge
-    [13241] = "Goblin Sapper Charge",
-
-    -- Rogue Poisons (fire as CAST, not MAINHAND/OFFHAND)
-    [8679]  = "Instant Poison VI",
-    [8688]  = "Instant Poison V",
-    [8687]  = "Instant Poison IV",
-    [8686]  = "Instant Poison III",
-    [8685]  = "Instant Poison II",
-    [8680]  = "Instant Poison",
-    [13219] = "Wound Poison V",
-    [13218] = "Wound Poison IV",
-    [13223] = "Wound Poison III",
-    [13222] = "Wound Poison II",
-    [13220] = "Wound Poison",
-    [5763]  = "Mind-numbing Poison III",
-    [8694]  = "Mind-numbing Poison II",
-    [5761]  = "Mind-numbing Poison",
-    [3408]  = "Crippling Poison II",
-    [3409]  = "Crippling Poison",
-    [11357] = "Deadly Poison V",
-    [11356] = "Deadly Poison IV",
-    [11355] = "Deadly Poison III",
-    [2824]  = "Deadly Poison II",
-    [2823]  = "Deadly Poison",
-
-    -- Custom server consumables (add server-specific items here)
-    -- [SPELLID] = "Name",
-};
+-- DO NOT add entries here manually. To track a new consumable, add it to
+-- CQ_Buffs in Conq_buffs.lua with a castSpells field.
+CQ_ConsTracker_Tracked = {};
 
 -- ---------------------------------------------------------------------------
 -- Frames (global to prevent GC)
