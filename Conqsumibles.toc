@@ -3,13 +3,14 @@
 ## Notes: Raid logger for Conquistadores. Tracks consumables, buff uptimes, deaths, loot, and spell casts. Requires Nampower/SuperWOW.
 ## Version: 2.0.0
 ## Author: Bha!
-## SavedVariables: CQui_RaidLogs, CQui_Settings, CQ_Log, CQ_GuidDB
+## SavedVariables: CQui_RaidLogs, CQui_Settings, CQ_Log, CQ_GuidDB, CQ_EncDB
 
 Conq_core.lua
 Conq_buffs.lua
 Conq_ConsumableTracker.lua
 Conq_ConsumableIntegration.lua
 Conq_SpellTracker.lua
+Conq_EnchantScanner.lua
 Conq_raidlog.lua
 Conq_CombatStats.lua
 Conq_MinimapButton.lua

@@ -1304,6 +1304,11 @@ function CQ_Log_InitializeRaid()
     CQ_Log_PendingGuidQueue = {};
 
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RAB Log] Raid logging started for " .. (CQ_Log.currentZone or currentZone) .. "|r");
+
+    -- Enchant scanner: begin scanning raid members' gear enchants
+    if CQ_EnchantScanner_OnRaidStart then
+        CQ_EnchantScanner_OnRaidStart();
+    end
     
     -- Cache the tracked-consumables list once at raid start so PerformCheck
     -- doesn't re-read the profile every 15 seconds for the entire raid.
@@ -1348,6 +1353,11 @@ function CQ_Log_FinalizeRaid()
         end
     end
     
+    -- Enchant scanner: stop scanning on raid end
+    if CQ_EnchantScanner_OnRaidEnd then
+        CQ_EnchantScanner_OnRaidEnd();
+    end
+
     CQ_Log.currentRaidId = nil;
     CQ_Log.sessionStartTime = nil;
     CQ_Log.isLogging = false;
