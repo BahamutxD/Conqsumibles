@@ -46,6 +46,10 @@ CQ_Buffs = {
     woundpoisonoh        = { type = "wepbuffonly", useOn = "weaponOH", name = "Wound Poison (offhand)",               identifiers = { }, itemId = 10922 },
     cripplingpoison      = { type = "wepbuffonly", useOn = "weapon",   name = "Crippling Poison",                     identifiers = { }, itemId = 3776 },
     cripplingpoisonoh    = { type = "wepbuffonly", useOn = "weaponOH", name = "Crippling Poison (offhand)",           identifiers = { }, itemId = 3776 },
+    corrosivepoison      = { type = "wepbuffonly", useOn = "weapon",   name = "Corrosive Poison",                     identifiers = { }, itemId = 47409 },
+    corrosivepoisonoh    = { type = "wepbuffonly", useOn = "weaponOH", name = "Corrosive Poison (offhand)",           identifiers = { }, itemId = 47409 },
+    dissolventpoison     = { type = "wepbuffonly", useOn = "weapon",   name = "Dissolvent Poison",                    identifiers = { }, itemId = 54010 },
+    dissolventpoisonoh   = { type = "wepbuffonly", useOn = "weaponOH", name = "Dissolvent Poison (offhand)",          identifiers = { }, itemId = 54010 },
 
     -- -----------------------------------------------------------------------
     -- Consumables tracked by buff bar polling (CheckPlayerBuff)
@@ -152,7 +156,8 @@ CQ_Buffs = {
     dreamwater      = { name = "Concoction of the Dreamwater",      identifiers = { { tooltip = "Concoction of the Dreamwater",      texture = "inv_green_pink_elixir_1",    spellId = 36934  } }, itemId = 47414 },
 
     -- Explosives / Misc (no buff bar icon - tracked via chat/SPELL_GO only)
-    goblinsapper    = { name = "Goblin Sapper Charge", identifiers = { }, itemId = 10646 },
-    oilofimmolation = { name = "Oil of Immolation",    identifiers = { { tooltip = "Fire Shield", texture = "Spell_Fire_Immolation", spellId = 11350  } }, itemId = 8956 },
+    goblinsapper         = { name = "Goblin Sapper Charge",        identifiers = { }, itemId = 10646 },
+    stratholmeholywater  = { name = "Stratholme Holy Water",       identifiers = { }, itemId = 13180 },
+    oilofimmolation      = { name = "Oil of Immolation",    identifiers = { { tooltip = "Fire Shield", texture = "Spell_Fire_Immolation", spellId = 11350  } }, itemId = 8956 },
     bogling         = { name = "Bogling Root",         identifiers = { { tooltip = "Fury of the Bogling", texture = "Spell_Nature_Strength", spellId = 5665  } }, itemId = 5206 },
 };

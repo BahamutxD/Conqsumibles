@@ -43,8 +43,6 @@ local CQ_PersistedKeys = {
     "trackedItems",
     "exportFormat",
     "verboseExport",
-    "autoExportInterval",
-    "checkInterval",
     "trackedZones",
     "autoUploadOnFinalize",
 };
@@ -943,8 +941,82 @@ local function CreateStatusTab(parent)
             " lines sent. Bot will post the .txt to Discord shortly.|r");
     end
 
-    uploadBtn:SetScript("OnClick", function()
+    -- ── Upload confirm dialog ─────────────────────────────────────────────────
+    -- Sits above the config window (DIALOG strata) by using TOOLTIP strata.
+    local confirmDlg = CreateFrame("Frame", "CQ_UploadConfirmDialog", UIParent);
+    confirmDlg:SetWidth(220);
+    confirmDlg:SetHeight(90);
+    confirmDlg:SetFrameStrata("TOOLTIP");
+    confirmDlg:SetFrameLevel(10);
+    -- Background: same solid fill used by the config frame (no Blizzard art)
+    confirmDlg:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        tile = true, tileSize = 16,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 },
+    });
+    confirmDlg:SetBackdropColor(0.09, 0.11, 0.16, 0.97);
+    -- 1px border matching the config frame border colour
+    local dlgBT = confirmDlg:CreateTexture(nil,"OVERLAY"); dlgBT:SetHeight(1); dlgBT:SetTexture(CQ_C.border[1],CQ_C.border[2],CQ_C.border[3],0.9); dlgBT:SetPoint("TOPLEFT",confirmDlg,"TOPLEFT",0,0);     dlgBT:SetPoint("TOPRIGHT",confirmDlg,"TOPRIGHT",0,0);
+    local dlgBB = confirmDlg:CreateTexture(nil,"OVERLAY"); dlgBB:SetHeight(1); dlgBB:SetTexture(CQ_C.border[1],CQ_C.border[2],CQ_C.border[3],0.9); dlgBB:SetPoint("BOTTOMLEFT",confirmDlg,"BOTTOMLEFT",0,0); dlgBB:SetPoint("BOTTOMRIGHT",confirmDlg,"BOTTOMRIGHT",0,0);
+    local dlgBL = confirmDlg:CreateTexture(nil,"OVERLAY"); dlgBL:SetWidth(1);  dlgBL:SetTexture(CQ_C.border[1],CQ_C.border[2],CQ_C.border[3],0.9); dlgBL:SetPoint("TOPLEFT",confirmDlg,"TOPLEFT",0,0);     dlgBL:SetPoint("BOTTOMLEFT",confirmDlg,"BOTTOMLEFT",0,0);
+    local dlgBR = confirmDlg:CreateTexture(nil,"OVERLAY"); dlgBR:SetWidth(1);  dlgBR:SetTexture(CQ_C.border[1],CQ_C.border[2],CQ_C.border[3],0.9); dlgBR:SetPoint("TOPRIGHT",confirmDlg,"TOPRIGHT",0,0);   dlgBR:SetPoint("BOTTOMRIGHT",confirmDlg,"BOTTOMRIGHT",0,0);
+    -- Title bar strip (matches config frame header)
+    local dlgTitleBg = confirmDlg:CreateTexture(nil,"BACKGROUND");
+    dlgTitleBg:SetPoint("TOPLEFT",  confirmDlg, "TOPLEFT",  1, -1);
+    dlgTitleBg:SetPoint("TOPRIGHT", confirmDlg, "TOPRIGHT", -1, -1);
+    dlgTitleBg:SetHeight(26);
+    dlgTitleBg:SetTexture(0.07, 0.09, 0.14, 0.97);
+    confirmDlg:SetPoint("CENTER", UIParent, "CENTER", 0, 60);
+    confirmDlg:Hide();
+
+    local confirmText = confirmDlg:CreateFontString(nil, "OVERLAY", "GameFontNormal");
+    confirmText:SetPoint("TOP", confirmDlg, "TOP", 0, -13);
+    confirmText:SetText("|cff00d4ffUpload raid log to Discord?|r");
+
+    local confirmSubText = confirmDlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+    confirmSubText:SetPoint("TOP", confirmText, "BOTTOM", 0, -8);
+    confirmSubText:SetText("Send the log via addon channel.");
+    confirmSubText:SetTextColor(CQ_C.muted[1], CQ_C.muted[2], CQ_C.muted[3]);
+
+    local dlgYesBtn = CreateFrame("Button", "CQ_UploadConfirmYes", confirmDlg);
+    dlgYesBtn:SetWidth(70); dlgYesBtn:SetHeight(18);
+    dlgYesBtn:SetPoint("BOTTOMLEFT", confirmDlg, "BOTTOMLEFT", 14, 10);
+    do
+        local _fs = dlgYesBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Confirm");
+        dlgYesBtn:SetFontString(_fs);
+        CQ_SkinButton(dlgYesBtn, "primary");
+    end
+    dlgYesBtn:SetScript("OnClick", function()
+        confirmDlg:Hide();
         CQ_Log_DoUpload(false);
+    end);
+
+    local dlgNoBtn = CreateFrame("Button", "CQ_UploadConfirmNo", confirmDlg);
+    dlgNoBtn:SetWidth(70); dlgNoBtn:SetHeight(18);
+    dlgNoBtn:SetPoint("BOTTOMRIGHT", confirmDlg, "BOTTOMRIGHT", -14, 10);
+    do
+        local _fs = dlgNoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Cancel");
+        dlgNoBtn:SetFontString(_fs);
+        CQ_SkinButton(dlgNoBtn, "danger");
+    end
+    dlgNoBtn:SetScript("OnClick", function()
+        confirmDlg:Hide();
+    end);
+
+    -- Close dialog if Escape is pressed
+    confirmDlg:SetScript("OnKeyDown", function()
+        if arg1 == "ESCAPE" then confirmDlg:Hide(); end
+    end);
+    confirmDlg:EnableKeyboard(true);
+
+    uploadBtn:SetScript("OnClick", function()
+        if confirmDlg:IsShown() then
+            confirmDlg:Hide();
+        else
+            confirmDlg:Show();
+        end
     end);
 
     -- Tooltip for the upload button
@@ -1022,9 +1094,9 @@ local function CreateStatusTab(parent)
     -- Shrunk ROW1 (~20% smaller) + top gap creates clear visual separation
     local BODY_GAP = 10;  -- px gap between strip and first content row
     local ROW1_H = 168;  -- Sunder | Deaths
-    local ROW2_H = 90;   -- Notable Loot (3-col grid)
-    local ROW3_H = 76;   -- Potions (3 lines) | Money
-    local ROW4_H = 68;   -- Top Consumers (buff uptime ranking)
+    local ROW2_H = 110;  -- Notable Loot (3-col grid, 5 per column)
+    local ROW3_H = 76;   -- Potions (4 lines) | Money
+    -- ROW4 removed
 
     local BODY_TOP = TOP_USED + BODY_GAP;  -- px from tab top where body starts (gap after strip)
     local PAD      = 0;                   -- flush to tab edges
@@ -1162,58 +1234,17 @@ local function CreateStatusTab(parent)
 
     BodyRule(y3 + ROW3_H);
 
-    -- ================================================================
-    -- ROW 4 — Top Consumers / Buff Uptime (full width)
-    -- ================================================================
-    local y4 = y3 + ROW3_H + 1;
-    Card(0, y4, IW, ROW4_H, false);
 
-    -- Full-width label + underline (same pattern as Notable Loot)
-    local uptimeLabelFs = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-    uptimeLabelFs:SetPoint("TOPLEFT", tab, "TOPLEFT", 9, -(BODY_TOP + y4 + 7));
-    uptimeLabelFs:SetText("|cff00d4ffTop Consumers|r");
-    local uptimeUl = tab:CreateTexture(nil, "OVERLAY");
-    uptimeUl:SetHeight(1);
-    uptimeUl:SetPoint("TOPLEFT",  tab, "TOPLEFT", 9,      -(BODY_TOP + y4 + 23));
-    uptimeUl:SetPoint("TOPRIGHT", tab, "TOPLEFT", IW - 4, -(BODY_TOP + y4 + 23));
-    uptimeUl:SetTexture(0.0, 0.38, 0.52, 0.5);
-
-    -- UptimeText is now visible — 3-column layout driven by UpdateStats
-    -- We create three FontStrings: col A (0..IW/3), B (IW/3..2*IW/3), C (2*IW/3..IW)
-    local UC = math.floor(IW / 3);
-    local uptimeFsA = tab:CreateFontString("CQ_Stat_UptimeTextA", "OVERLAY", "GameFontHighlightSmall");
-    uptimeFsA:SetPoint("TOPLEFT", tab, "TOPLEFT", 9,           -(BODY_TOP + y4 + 26));
-    uptimeFsA:SetWidth(UC - 12); uptimeFsA:SetHeight(ROW4_H - 30);
-    uptimeFsA:SetJustifyH("LEFT"); uptimeFsA:SetJustifyV("TOP");
-    uptimeFsA:SetText("|cff2a3a4aâ|r");
-
-    local uptimeFsB = tab:CreateFontString("CQ_Stat_UptimeTextB", "OVERLAY", "GameFontHighlightSmall");
-    uptimeFsB:SetPoint("TOPLEFT", tab, "TOPLEFT", UC + 6,       -(BODY_TOP + y4 + 26));
-    uptimeFsB:SetWidth(UC - 12); uptimeFsB:SetHeight(ROW4_H - 30);
-    uptimeFsB:SetJustifyH("LEFT"); uptimeFsB:SetJustifyV("TOP");
-    uptimeFsB:SetText("");
-
-    local uptimeFsC = tab:CreateFontString("CQ_Stat_UptimeTextC", "OVERLAY", "GameFontHighlightSmall");
-    uptimeFsC:SetPoint("TOPLEFT", tab, "TOPLEFT", UC * 2 + 6,   -(BODY_TOP + y4 + 26));
-    uptimeFsC:SetWidth(UC - 12); uptimeFsC:SetHeight(ROW4_H - 30);
-    uptimeFsC:SetJustifyH("LEFT"); uptimeFsC:SetJustifyV("TOP");
-    uptimeFsC:SetText("");
-
-    -- Col dividers inside the uptime row
-    local function UColDiv(x)
-        local ud = tab:CreateTexture(nil, "OVERLAY");
-        ud:SetWidth(1); ud:SetHeight(ROW4_H - 2);
-        ud:SetPoint("TOPLEFT", tab, "TOPLEFT", x, -(BODY_TOP + y4 + 1));
-        ud:SetTexture(0.12, 0.18, 0.28, 0.6);
+    -- Hidden legacy FontStrings (globals required by UpdateStats)
+    local function HiddenFs(name)
+        local fs = tab:CreateFontString("CQ_Stat_" .. name, "OVERLAY", "GameFontHighlightSmall");
+        fs:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0);
+        fs:SetWidth(1); fs:SetHeight(1); fs:Hide();
     end
-    UColDiv(UC);
-    UColDiv(UC * 2);
-
-    -- Hidden legacy UptimeText (still required as a global by some UpdateStats paths)
-    local hiddenUptime = tab:CreateFontString("CQ_Stat_UptimeText", "OVERLAY", "GameFontHighlightSmall");
-    hiddenUptime:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0);
-    hiddenUptime:SetWidth(1); hiddenUptime:SetHeight(1);
-    hiddenUptime:Hide();
+    HiddenFs("UptimeText");
+    HiddenFs("UptimeTextA");
+    HiddenFs("UptimeTextB");
+    HiddenFs("UptimeTextC");
 
     -- ── Refresh button — right side of stats strip, vertically centred ─────────
     local refreshBtn = CreateFrame("Button", "CQ_Status_RefreshBtn", tab);
@@ -1421,115 +1452,6 @@ local function CreateOptionsTab(parent)
     end);
     yOff = yOff + CHK + 4;
     OptBox(boxStart_track, yOff);
-
-    -- ================================================================
-    -- AUTO-EXPORT
-    -- ================================================================
-    OptHdr("Auto-Export", 10);
-    local boxStart_export = yOff;
-
-    -- Row: label + editbox + "minutes" suffix + Apply button
-    local exportLbl = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
-    exportLbl:SetPoint("TOPLEFT", tab, "TOPLEFT", M, -yOff);
-    exportLbl:SetText("|cffaaaaaaInterval (seconds):|r");
-    exportLbl:SetWidth(130);
-
-    local exportEdit = CreateFrame("EditBox", "CQ_Opt_ExportIntervalEdit", tab);
-    exportEdit:SetWidth(56);
-    exportEdit:SetHeight(22);
-    exportEdit:SetPoint("LEFT", exportLbl, "RIGHT", 6, 0);
-    exportEdit:SetNumeric(true);
-    exportEdit:SetMaxLetters(5);
-    exportEdit:SetText(tostring(CQ_Log and CQ_Log.autoExportInterval or 600));
-    CQ_SkinEditBox(exportEdit);
-
-    local exportSecLbl = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
-    exportSecLbl:SetPoint("LEFT", exportEdit, "RIGHT", 5, 0);
-    exportSecLbl:SetText("|cff888888sec  (0 = disabled)|r");
-
-    local exportApply = CreateFrame("Button", "CQ_Opt_ExportApply", tab);
-    exportApply:SetWidth(60);
-    exportApply:SetHeight(22);
-    exportApply:SetPoint("LEFT", exportSecLbl, "RIGHT", 8, 0);
-    do local _fs = exportApply:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Apply"); exportApply:SetFontString(_fs); CQ_SkinButton(exportApply, "primary"); end
-    exportApply:SetScript("OnClick", function()
-        if not CQ_Log then return; end
-        local v = tonumber(exportEdit:GetText()) or 600;
-        if v < 0 then v = 0; end
-        CQ_Log.autoExportInterval = v;
-        CQ_Settings_Save();
-        local msg = v == 0 and "|cffff9900disabled|r"
-                           or ("|cff00ff00" .. v .. "s (" .. math.floor(v/60) .. "m)|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[Conq] Auto-export interval set to " .. msg);
-    end);
-    exportEdit:SetScript("OnEnterPressed", function()
-        exportApply:Click();
-        this:ClearFocus();
-    end);
-
-    yOff = yOff + 26;
-
-    OptNote(
-        "|cff666666Requires Nampower. The file is written to the WoW |r" ..
-        "|cffaaaaaa CustomData/|r|cff666666 folder.|r");
-    yOff = yOff + 16;
-    OptBox(boxStart_export, yOff);
-
-    -- ================================================================
-    -- BUFF POLLING
-    -- ================================================================
-    OptHdr("Buff Polling", 10);
-    local boxStart_poll = yOff;
-
-    local pollLbl = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
-    pollLbl:SetPoint("TOPLEFT", tab, "TOPLEFT", M, -yOff);
-    pollLbl:SetText("|cffaaaaaaCheck interval (seconds):|r");
-    pollLbl:SetWidth(160);
-
-    local pollEdit = CreateFrame("EditBox", "CQ_Opt_PollIntervalEdit", tab);
-    pollEdit:SetWidth(46);
-    pollEdit:SetHeight(22);
-    pollEdit:SetPoint("LEFT", pollLbl, "RIGHT", 6, 0);
-    pollEdit:SetNumeric(true);
-    pollEdit:SetMaxLetters(4);
-    pollEdit:SetText(tostring(CQ_Log and CQ_Log.checkInterval or 15));
-    CQ_SkinEditBox(pollEdit);
-
-    local pollSecLbl = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall");
-    pollSecLbl:SetPoint("LEFT", pollEdit, "RIGHT", 5, 0);
-    pollSecLbl:SetText("|cff888888sec|r");
-
-    local pollApply = CreateFrame("Button", "CQ_Opt_PollApply", tab);
-    pollApply:SetWidth(60);
-    pollApply:SetHeight(22);
-    pollApply:SetPoint("LEFT", pollSecLbl, "RIGHT", 8, 0);
-    do local _fs = pollApply:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Apply"); pollApply:SetFontString(_fs); CQ_SkinButton(pollApply, "primary"); end
-    pollApply:SetScript("OnClick", function()
-        if not CQ_Log then return; end
-        local v = tonumber(pollEdit:GetText()) or 15;
-        if v < 5  then v = 5;  end   -- minimum 5s to avoid CPU hammering
-        if v > 60 then v = 60; end   -- maximum 60s
-        CQ_Log.checkInterval = v;
-        -- Restart the timer so it actually fires at the new interval,
-        -- not just the one it was registered with at raid start.
-        RAB_Core_RemoveTimer("raidlog_check");
-        RAB_Core_AddTimer(v, "raidlog_check", CQ_Log_PerformCheck);
-        CQ_Settings_Save();
-        DEFAULT_CHAT_FRAME:AddMessage(
-            "|cffaaaaaa[Conq] Buff poll interval set to |cff00ff00" .. v .. "s|r");
-    end);
-    pollEdit:SetScript("OnEnterPressed", function()
-        pollApply:Click();
-        this:ClearFocus();
-    end);
-
-    yOff = yOff + 26;
-
-    OptNote(
-        "|cff666666How often the raid roster is scanned for active buffs and consumables.\n" ..
-        "Lower = more accurate uptime data but slightly more CPU. Range: 5–60s. Default: 15s.|r");
-    yOff = yOff + 28;
-    OptBox(boxStart_poll, yOff);
 
     -- ================================================================
     -- AUTOMATICALLY-TRACKED RAID ZONES
@@ -1777,42 +1699,85 @@ local function CreateSimulateTab(parent)
     scrollFrame:SetScrollChild(content);
     CQ_SkinScrollFrame(scrollFrame, "CQ_Sim_Scroll");
 
-    -- Dark background for the entire simulate list
-    local simBg = content:CreateTexture(nil, "BACKGROUND");
-    simBg:SetAllPoints(content);
-    simBg:SetTexture(0.12, 0.15, 0.22, 0.98);
+    local bg = content:CreateTexture(nil, "BACKGROUND");
+    bg:SetAllPoints(content);
+    bg:SetTexture(0.12, 0.15, 0.22, 0.98);
 
-    local M      = 6;    -- margin
-    local ROW_H  = 22;
-    local HDR_H  = 16;
-    local BTN_W  = 44;
-    local BTN_H  = 18;
-    local IW     = CONTENT_W - 36 - M * 2;
-    local COL_W  = math.floor(IW / 2);
+    local M     = 6;
+    local IW    = CONTENT_W - 36 - M * 2;
+    local COL_W = math.floor(IW / 2);
+    local ROW_H = 22;
+    local BTN_W = 48;
+    local BTN_H = 18;
+    local HDR_H = 16;
+    local yOff  = 6;
 
-    local yOff = 6;
-
-    -- Helper: draw a section header + divider line, return new yOff
-    local function SimHdr(text)
+    -- ── Section header + divider ──────────────────────────────────────────
+    local function SimHdr(text, r, g, b)
         yOff = yOff + 10;
         local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormal");
         hdr:SetPoint("TOPLEFT", M, -yOff);
-        hdr:SetText("|cff00d4ff" .. text .. "|r");
+        local cr = r or 0.0; local cg = g or 0.831; local cb = b or 1.0;
+        hdr:SetTextColor(cr, cg, cb);
+        hdr:SetText(text);
         yOff = yOff + HDR_H;
         local div = content:CreateTexture(nil, "OVERLAY");
         div:SetWidth(IW); div:SetHeight(1);
         div:SetPoint("TOPLEFT", M, -yOff);
-        div:SetTexture(0.4, 0.35, 0.1, 0.5);
+        div:SetTexture(cr * 0.6, cg * 0.6, cb * 0.6, 0.7);
         yOff = yOff + 6;
     end
 
-    -- Helper: draw a Fire button + label at current yOff/col, advance position
-    local function SimRow(btnName, label, col, onClick)
+    -- ── Cast-test row (exercises the real detection pipeline) ─────────────
+    -- spellID   : passed to CQ_SimulateCastEvent
+    -- label     : display name
+    -- eventType : "SPELL_GO_OTHER" | "AURA_CAST_ON_OTHER" | nil (disabled)
+    -- col       : 0 or 1
+    local function CTRow(uniqueSuffix, label, spellID, eventType, col)
+        local xBase = M + col * COL_W;
+        local btn = CreateFrame("Button", "CQ_Sim_Btn_" .. uniqueSuffix, content);
+        btn:SetWidth(BTN_W); btn:SetHeight(BTN_H);
+        btn:SetPoint("TOPLEFT", xBase, -yOff);
+        local _fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER");
+        btn:SetFontString(_fs);
+        local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+        lbl:SetPoint("LEFT", btn, "RIGHT", 4, 0);
+        lbl:SetWidth(COL_W - BTN_W - 8);
+        lbl:SetJustifyH("LEFT");
+        if not eventType then
+            _fs:SetText("-");
+            lbl:SetText("|cff555555" .. label .. "|r");
+            btn:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", tile = true, tileSize = 16, insets = { left=0, right=0, top=0, bottom=0 } });
+            btn:SetBackdropColor(0.10, 0.10, 0.10, 0.7);
+            btn:Disable();
+        else
+            _fs:SetText("Cast");
+            lbl:SetText("|cff00ffff" .. label .. "|r");
+            CQ_SkinButton(btn, "primary");
+            local sID = spellID; local eT = eventType;
+            btn:SetScript("OnClick", function()
+                if not CQ_Log or not CQ_Log.isLogging then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] Start logging first (/conqlog start).|r");
+                    return;
+                end
+                local ok = CQ_SimulateCastEvent(sID, UnitName("player"), eT, false);
+                if ok then
+                    local safeLabel = string.gsub(label, "%.", "");
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[Simulate] Cast -> " .. safeLabel .. " (spellID=" .. sID .. ")|r");
+                end
+            end);
+        end
+        return btn;
+    end
+
+    -- ── Direct-inject row (Deaths, Gold, Loot, Sunder — no cast event) ────
+    local function DirRow(btnName, label, col, onClick)
         local xBase = M + col * COL_W;
         local btn = CreateFrame("Button", btnName, content);
         btn:SetWidth(BTN_W); btn:SetHeight(BTN_H);
         btn:SetPoint("TOPLEFT", xBase, -yOff);
-        do local _fs = btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Fire"); btn:SetFontString(_fs); CQ_SkinButton(btn, "primary"); end
+        do local _fs = btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Fire"); btn:SetFontString(_fs); CQ_SkinButton(btn, "ghost"); end
         btn:SetScript("OnClick", onClick);
         local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
         lbl:SetPoint("LEFT", btn, "RIGHT", 4, 0);
@@ -1822,57 +1787,76 @@ local function CreateSimulateTab(parent)
         return btn;
     end
 
-    -- Helper: get the current raid table, print error if not available
+    -- ── Column cursor helpers ─────────────────────────────────────────────
+    local curCol = 0;
+    local function CT(suffix, label, spellID, eventType)
+        CTRow(suffix, label, spellID, eventType, curCol);
+        curCol = curCol + 1;
+        if curCol >= 2 then curCol = 0; yOff = yOff + ROW_H; end
+    end
+    local function CTFlush()
+        if curCol > 0 then curCol = 0; yOff = yOff + ROW_H; end
+    end
+    local function DR(name, label, onClick)
+        DirRow(name, label, curCol, onClick);
+        curCol = curCol + 1;
+        if curCol >= 2 then curCol = 0; yOff = yOff + ROW_H; end
+    end
+    local function DRFlush()
+        if curCol > 0 then curCol = 0; yOff = yOff + ROW_H; end
+    end
+
+    -- ── Helpers ───────────────────────────────────────────────────────────
     local function GetRaid()
         if not CQ_Log or not CQ_Log.isLogging or not CQ_Log.currentRaidId then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RAB Simulate] Not logging. Run /conqlog start first.|r");
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] Not logging. Run /conqlog start first.|r");
             return nil;
         end
         if not CQui_RaidLogs or not CQui_RaidLogs.raids then return nil; end
         return CQui_RaidLogs.raids[CQ_Log.currentRaidId];
     end
 
-    -- Helper: ensure a player entry exists in raid.players
     local function EnsurePlayer(raid, name)
         if not raid.players[name] then
-            raid.players[name] = {
-                class = "Unknown",
-                participationTime = 0,
-                lastSeen = time(),
-                firstSeen = time(),
-                consumables = {},
-                deaths = 0,
-            };
+            raid.players[name] = { class = "Unknown", participationTime = 0, lastSeen = time(), firstSeen = time(), consumables = {}, deaths = 0 };
         end
     end
 
     -- ================================================================
-    -- Top instruction + Fire All consumables button
+    -- TOP BAR
     -- ================================================================
-    local note = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-    note:SetPoint("TOPLEFT", M, -yOff);
-    note:SetWidth(IW);
-    note:SetText("|cffaaaaaaStart logging first ( /conqlog start ), then click Fire to inject test events.|r");
-    yOff = yOff + 18;
+    local statusNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+    statusNote:SetPoint("TOPLEFT", M, -yOff);
+    statusNote:SetWidth(IW);
+    statusNote:SetJustifyH("LEFT");
+    statusNote:SetText("|cff00ffff Cyan|r = cast event (real pipeline)   |cffaaaaaa Ghost|r = direct inject");
+    yOff = yOff + 14;
 
+    local dbgNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+    dbgNote:SetPoint("TOPLEFT", M, -yOff);
+    dbgNote:SetWidth(IW);
+    dbgNote:SetJustifyH("LEFT");
+    dbgNote:SetText("|cff666666Enable /conqcons debug and /conqlog debugconsumables to trace each pipeline stage.|r");
+    yOff = yOff + 14;
+
+    -- Fire All Consumables button
     local fireAllBtn = CreateFrame("Button", "CQ_Sim_FireAll", content);
-    fireAllBtn:SetWidth(130); fireAllBtn:SetHeight(20);
+    fireAllBtn:SetWidth(150); fireAllBtn:SetHeight(20);
     fireAllBtn:SetPoint("TOPLEFT", M, -yOff);
     do local _fs = fireAllBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Fire All Consumables"); fireAllBtn:SetFontString(_fs); CQ_SkinButton(fireAllBtn, "primary"); end
-    fireAllBtn:SetScript("OnClick", function()
-        if not GetRaid() then return; end
-        local playerName = UnitName("player");
-        local count = 0;
-        for _, section in ipairs(CQ_Log_ConsumableCatalog) do
-            for _, item in ipairs(section.items) do
-                local duration = CQ_Log_ConsumableDurations[item.key] or 1800;
-                if duration > 0 then
-                    CQ_Log_TrackConsumable(playerName, item.key, true, duration);
-                    count = count + 1;
-                end
-            end
+
+    -- Fire Bad GUID button
+    local badGuidBtn = CreateFrame("Button", "CQ_Sim_BadGuid", content);
+    badGuidBtn:SetWidth(140); badGuidBtn:SetHeight(20);
+    badGuidBtn:SetPoint("LEFT", fireAllBtn, "RIGHT", 6, 0);
+    do local _fs = badGuidBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Fire Bad GUID"); badGuidBtn:SetFontString(_fs); CQ_SkinButton(badGuidBtn, "ghost"); end
+    badGuidBtn:SetScript("OnClick", function()
+        if not CQ_Log or not CQ_Log.isLogging then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] Start logging first.|r");
+            return;
         end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RAB Simulate] Fired " .. count .. " consumables.|r");
+        CQ_SimulateCastEvent(25123, UnitName("player"), "SPELL_GO_OTHER", true);
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] Bad GUID fired - check /conqcons queue.|r");
     end);
     yOff = yOff + 28;
 
@@ -1880,177 +1864,412 @@ local function CreateSimulateTab(parent)
     topDiv:SetWidth(IW); topDiv:SetHeight(1);
     topDiv:SetPoint("TOPLEFT", M, -yOff);
     topDiv:SetTexture(0.22, 0.30, 0.42, 0.8);
-    yOff = yOff + 6;
+    yOff = yOff + 8;
 
     -- ================================================================
-    -- SECTION: Deaths
+    -- SECTION: Deaths (direct inject)
     -- ================================================================
-    SimHdr("Player Deaths");
-
-    local DEATH_NAMES = { "Warrior", "Mage", "Priest", "Warlock", "Druid", "Paladin" };
+    SimHdr("Player Deaths", 1.0, 0.3, 0.3);
+    local DEATH_NAMES   = { "Warrior", "Mage", "Priest", "Warlock", "Druid", "Paladin" };
     local DEATH_KILLERS = { "Ragnaros", "Nefarian", "C'Thun", "Kel'Thuzad", "Archimonde", "Illidan" };
-
-    local dCol = 0;
     for i, name in ipairs(DEATH_NAMES) do
-        local dName   = name;
-        local dKiller = DEATH_KILLERS[i] or "Unknown";
-        SimRow("CQ_Sim_Death_" .. i, "Kill " .. dName, dCol, function()
+        local dName = name; local dKiller = DEATH_KILLERS[i] or "Unknown";
+        DR("CQ_Sim_Death_" .. i, "Kill " .. dName, function()
             local raid = GetRaid(); if not raid then return; end
             EnsurePlayer(raid, dName);
-            table.insert(raid.deaths, {
-                playerName = dName,
-                killedBy   = dKiller,
-                timestamp  = time(),
-            });
+            table.insert(raid.deaths, { playerName = dName, killedBy = dKiller, timestamp = time() });
             raid.players[dName].deaths = (raid.players[dName].deaths or 0) + 1;
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[RAB Simulate] Death: " .. dName .. " killed by " .. dKiller .. "|r");
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[Simulate] Death: " .. dName .. " killed by " .. dKiller .. "|r");
         end);
-        dCol = dCol + 1;
-        if dCol >= 2 then dCol = 0; yOff = yOff + ROW_H; end
     end
-    if dCol > 0 then yOff = yOff + ROW_H; end
+    DRFlush();
 
     -- ================================================================
-    -- SECTION: Loot
+    -- SECTION: Gold Drops (direct inject)
     -- ================================================================
-    SimHdr("Loot Drops");
-
-    local LOOT_ITEMS = {
-        { name = "Tier 2 Helm",        quality = 4, itemId = 16931 },
-        { name = "Sulfuron Hammer",     quality = 4, itemId = 17182 },
-        { name = "Ashkandi",            quality = 4, itemId = 19364 },
-        { name = "Band of Accuria",     quality = 3, itemId = 17063 },
-        { name = "Core Hound Tooth",    quality = 3, itemId = 18805 },
-        { name = "Onyxia Scale Cloak",  quality = 2, itemId = 15138 },
-    };
-
-    local lCol = 0;
-    for _, loot in ipairs(LOOT_ITEMS) do
-        local lName    = loot.name;
-        local lQuality = loot.quality;
-        local lItemId  = loot.itemId;
-        -- Map quality int to name string matching raidlog conventions
-        local QNAMES = { [0]="poor", [1]="common", [2]="uncommon", [3]="rare", [4]="epic", [5]="legendary" };
-        local lQualName = QNAMES[lQuality] or "uncommon";
-        SimRow("CQ_Sim_Loot_" .. lItemId, lName, lCol, function()
-            local raid = GetRaid(); if not raid then return; end
-            local player = UnitName("player");
-            table.insert(raid.loot, {
-                playerName  = player,
-                itemId      = lItemId,
-                itemName    = lName,
-                itemQuality = lQualName,
-                quantity    = 1,
-            });
-            DEFAULT_CHAT_FRAME:AddMessage("|cff1eff00[RAB Simulate] Loot: " .. lName .. " → " .. player .. "|r");
-        end);
-        lCol = lCol + 1;
-        if lCol >= 2 then lCol = 0; yOff = yOff + ROW_H; end
-    end
-    if lCol > 0 then yOff = yOff + ROW_H; end
-
-    -- ================================================================
-    -- SECTION: Gold Drops
-    -- ================================================================
-    SimHdr("Gold Drops");
-
+    SimHdr("Gold Drops", 1.0, 0.85, 0.0);
     local GOLD_AMOUNTS = {
-        { label = "1g 50s",   copper = 15000  },
-        { label = "5g 22s",   copper = 52200  },
-        { label = "12g",      copper = 120000 },
-        { label = "25g 10s",  copper = 251000 },
+        { label = "1g 50s",  copper = 15000  },
+        { label = "5g 22s",  copper = 52200  },
+        { label = "12g",     copper = 120000 },
+        { label = "25g 10s", copper = 251000 },
+        { label = "50g",     copper = 500000 },
+        { label = "100g",    copper = 1000000 },
     };
-
-    local gCol = 0;
     for _, gold in ipairs(GOLD_AMOUNTS) do
-        local gLabel  = gold.label;
-        local gCopper = gold.copper;
-        SimRow("CQ_Sim_Gold_" .. gCopper, gLabel, gCol, function()
+        local gLabel = gold.label; local gCopper = gold.copper;
+        DR("CQ_Sim_Gold_" .. gCopper, gLabel, function()
             local raid = GetRaid(); if not raid then return; end
             raid.totalMoneyCopper = (raid.totalMoneyCopper or 0) + gCopper;
-            DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00[RAB Simulate] Gold drop: " .. gLabel ..
-                "  (raid total: " .. raid.totalMoneyCopper .. "c)|r");
+            DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00[Simulate] Gold: " .. gLabel .. " (total: " .. raid.totalMoneyCopper .. "c)|r");
         end);
-        gCol = gCol + 1;
-        if gCol >= 2 then gCol = 0; yOff = yOff + ROW_H; end
     end
-    if gCol > 0 then yOff = yOff + ROW_H; end
+    DRFlush();
 
     -- ================================================================
-    -- SECTION: Sunder Armor
+    -- SECTION: Loot Drops (direct inject)
     -- ================================================================
-    SimHdr("Sunder Armor Casts");
-
-    local SUNDER_PLAYERS = {
-        { name = "Kargath",  count = 1  },
-        { name = "Rokmar",   count = 5  },
-        { name = "Gronn",    count = 15 },
-        { name = "Vazruden", count = 30 },
+    SimHdr("Loot Drops", 0.6, 0.0, 1.0);
+    local LOOT_ITEMS = {
+        { name = "Tier 2 Helm",       quality = 4, itemId = 16931 },
+        { name = "Sulfuron Hammer",    quality = 4, itemId = 17182 },
+        { name = "Ashkandi",           quality = 4, itemId = 19364 },
+        { name = "Band of Accuria",    quality = 3, itemId = 17063 },
+        { name = "Core Hound Tooth",   quality = 3, itemId = 18805 },
+        { name = "Onyxia Scale Cloak", quality = 2, itemId = 15138 },
     };
-
-    local sCol = 0;
-    for _, s in ipairs(SUNDER_PLAYERS) do
-        local sName  = s.name;
-        local sCount = s.count;
-        local sLabel = sName .. " ×" .. sCount;
-        SimRow("CQ_Sim_Sunder_" .. sName, sLabel, sCol, function()
+    local QNAMES = { [0]="poor",[1]="common",[2]="uncommon",[3]="rare",[4]="epic",[5]="legendary" };
+    for _, loot in ipairs(LOOT_ITEMS) do
+        local lName = loot.name; local lItemId = loot.itemId; local lQualName = QNAMES[loot.quality] or "uncommon";
+        DR("CQ_Sim_Loot_" .. lItemId, lName, function()
             local raid = GetRaid(); if not raid then return; end
-            -- Inject directly into raid.spells — same structure as CQ_Log_RecordSunder
+            local player = UnitName("player");
+            table.insert(raid.loot, { playerName = player, itemId = lItemId, itemName = lName, itemQuality = lQualName, quantity = 1 });
+            DEFAULT_CHAT_FRAME:AddMessage("|cff1eff00[Simulate] Loot: " .. lName .. " -> " .. player .. "|r");
+        end);
+    end
+    DRFlush();
+
+    -- ================================================================
+    -- SECTION: Sunder Armor (direct inject + CQ_SimulateCastEvent)
+    -- ================================================================
+    SimHdr("Sunder Armor", 0.53, 0.8, 1.0);
+    local SUNDER_PLAYERS = {
+        { name = "Warrior1",  count = 1  },
+        { name = "Warrior2",  count = 5  },
+        { name = "Warrior3",  count = 15 },
+        { name = "Warrior4",  count = 30 },
+    };
+    for _, s in ipairs(SUNDER_PLAYERS) do
+        local sName = s.name; local sCount = s.count;
+        DR("CQ_Sim_Sunder_" .. sName, sName .. " x" .. sCount, function()
+            local raid = GetRaid(); if not raid then return; end
             if not raid.spells[sName] then raid.spells[sName] = {}; end
             if not raid.spells[sName]["sunder_armor"] then
                 raid.spells[sName]["sunder_armor"] = { count = 0, spellName = "Sunder Armor" };
             end
-            raid.spells[sName]["sunder_armor"].count =
-                raid.spells[sName]["sunder_armor"].count + sCount;
-            DEFAULT_CHAT_FRAME:AddMessage("|cff88ccff[RAB Simulate] Sunder: " .. sName ..
-                " ×" .. sCount .. " (total: " .. raid.spells[sName]["sunder_armor"].count .. ")|r");
+            raid.spells[sName]["sunder_armor"].count = raid.spells[sName]["sunder_armor"].count + sCount;
+            DEFAULT_CHAT_FRAME:AddMessage("|cff88ccff[Simulate] Sunder: " .. sName .. " x" .. sCount .. " (total: " .. raid.spells[sName]["sunder_armor"].count .. ")|r");
         end);
-        sCol = sCol + 1;
-        if sCol >= 2 then sCol = 0; yOff = yOff + ROW_H; end
     end
-    if sCol > 0 then yOff = yOff + ROW_H; end
+    DRFlush();
+
+    -- Sunder via real pipeline (CQ_SimulateCastEvent, spellID 7386 = Sunder Armor rank 1)
+    -- Uses CQ_Log_RecordSunder path
+    local sunderSelfBtn = CreateFrame("Button", "CQ_Sim_SunderSelf", content);
+    sunderSelfBtn:SetWidth(160); sunderSelfBtn:SetHeight(BTN_H);
+    sunderSelfBtn:SetPoint("TOPLEFT", M, -yOff);
+    do local _fs = sunderSelfBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); _fs:SetAllPoints(); _fs:SetJustifyH("CENTER"); _fs:SetText("Sunder (pipeline) x1"); sunderSelfBtn:SetFontString(_fs); CQ_SkinButton(sunderSelfBtn, "primary"); end
+    sunderSelfBtn:SetScript("OnClick", function()
+        if not CQ_Log or not CQ_Log.isLogging then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] Start logging first.|r"); return;
+        end
+        -- Directly call the sunder recorder with the local player name
+        if CQ_Log_RecordSunderSelf then
+            CQ_Log_RecordSunderSelf(UnitName("player"));
+            DEFAULT_CHAT_FRAME:AddMessage("|cff88ccff[Simulate] Sunder pipeline fired for " .. UnitName("player") .. "|r");
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] CQ_Log_RecordSunderSelf not found.|r");
+        end
+    end);
+    yOff = yOff + ROW_H;
+
+    local divSunder = content:CreateTexture(nil, "OVERLAY");
+    divSunder:SetWidth(IW); divSunder:SetHeight(1);
+    divSunder:SetPoint("TOPLEFT", M, -yOff);
+    divSunder:SetTexture(0.22, 0.30, 0.42, 0.6);
+    yOff = yOff + 8;
 
     -- ================================================================
-    -- SECTION: Consumables (from catalog)
+    -- SECTION: Weapon Oils  (AURA_CAST via CQ_ConsTracker)
     -- ================================================================
-    if CQ_Log_ConsumableCatalog then
-        for _, section in ipairs(CQ_Log_ConsumableCatalog) do
-            SimHdr(section.header);
-            local col = 0;
-            for _, item in ipairs(section.items) do
-                local bKey   = item.key;
-                local bLabel = item.label;
-                local btn = SimRow("CQ_Sim_Fire_" .. bKey, bLabel, col, function()
-                    if not GetRaid() then return; end
-                    local duration = CQ_Log_ConsumableDurations[bKey] or 1800;
-                    CQ_Log_TrackConsumable(UnitName("player"), bKey, true, duration);
-                    -- Remove dots before printing to chat: WoW 1.12 chat renderer
-                    -- auto-linkifies dot-separated strings (e.g. "R.O.I.D.S.") as URLs.
-                    local safeLabel = string.gsub(bLabel, "%.", "");
-                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[RAB Simulate] Fired: " .. safeLabel .. "|r");
-                end);
-                -- Tooltip
-                local bItemId = CQ_Buffs and CQ_Buffs[bKey] and CQ_Buffs[bKey].itemId;
-                if bItemId then
-                    btn:SetScript("OnEnter", function()
-                        GameTooltip:SetOwner(this, "ANCHOR_RIGHT");
-                        GameTooltip:SetHyperlink("item:" .. bItemId);
-                        GameTooltip:Show();
-                    end);
-                    btn:SetScript("OnLeave", function() GameTooltip:Hide(); end);
-                end
-                col = col + 1;
-                if col >= 2 then col = 0; yOff = yOff + ROW_H; end
-            end
-            if col > 0 then yOff = yOff + ROW_H; end
+    SimHdr("Weapon Oils", 1.0, 0.65, 0.1);
+    CT("brillmanaoil",     "Brilliant Mana Oil",    25123, "AURA_CAST_ON_OTHER");
+    CT("lessermanaoil",    "Lesser Mana Oil",        20747, "AURA_CAST_ON_OTHER");
+    CT("brillwizardoil",   "Brilliant Wizard Oil",   25122, "AURA_CAST_ON_OTHER");
+    CT("blessedwizardoil", "Blessed Wizard Oil",     28898, "AURA_CAST_ON_OTHER");
+    CT("wizardoil",        "Wizard Oil",             25121, "AURA_CAST_ON_OTHER");
+    CT("frostoil",         "Frost Oil",               3829, "AURA_CAST_ON_OTHER");
+    CT("shadowoil",        "Shadow Oil",              3594, "AURA_CAST_ON_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Weapon Stones  (AURA_CAST via CQ_ConsTracker)
+    -- ================================================================
+    SimHdr("Weapon Stones", 1.0, 0.65, 0.1);
+    CT("elemstone",   "Elemental Sharp. Stone", 22756, "AURA_CAST_ON_OTHER");
+    CT("densestone",  "Dense Sharp. Stone",      16138, "AURA_CAST_ON_OTHER");
+    CT("consecstone", "Consecrated Stone",       28891, "AURA_CAST_ON_OTHER");
+    CT("denseweight", "Dense Weightstone",       16622, "AURA_CAST_ON_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Rogue Poisons  (SPELL_GO via CQ_ConsTracker)
+    -- ================================================================
+    SimHdr("Rogue Poisons", 0.0, 0.831, 1.0);
+    CT("deadlyp5",    "Deadly Poison V",         11357, "SPELL_GO_OTHER");
+    CT("deadlyp4",    "Deadly Poison IV",        11356, "SPELL_GO_OTHER");
+    CT("deadlyp3",    "Deadly Poison III",       11355, "SPELL_GO_OTHER");
+    CT("deadlyp2",    "Deadly Poison II",         2824, "SPELL_GO_OTHER");
+    CT("deadlyp1",    "Deadly Poison",            2823, "SPELL_GO_OTHER");
+    CT("instantp6",   "Instant Poison VI",        8679, "SPELL_GO_OTHER");
+    CT("instantp5",   "Instant Poison V",         8688, "SPELL_GO_OTHER");
+    CT("instantp4",   "Instant Poison IV",        8687, "SPELL_GO_OTHER");
+    CT("instantp3",   "Instant Poison III",       8686, "SPELL_GO_OTHER");
+    CT("instantp2",   "Instant Poison II",        8685, "SPELL_GO_OTHER");
+    CT("instantp1",   "Instant Poison",           8680, "SPELL_GO_OTHER");
+    CT("woundp5",     "Wound Poison V",          13219, "SPELL_GO_OTHER");
+    CT("woundp4",     "Wound Poison IV",         13218, "SPELL_GO_OTHER");
+    CT("woundp3",     "Wound Poison III",        13223, "SPELL_GO_OTHER");
+    CT("woundp2",     "Wound Poison II",         13222, "SPELL_GO_OTHER");
+    CT("woundp1",     "Wound Poison",            13220, "SPELL_GO_OTHER");
+    CT("mindnumb3",   "Mind-numbing III",         5763, "SPELL_GO_OTHER");
+    CT("mindnumb2",   "Mind-numbing II",          8694, "SPELL_GO_OTHER");
+    CT("mindnumb1",   "Mind-numbing",             5761, "SPELL_GO_OTHER");
+    CT("cripplingp2", "Crippling Poison II",      3408, "SPELL_GO_OTHER");
+    CT("cripplingp1", "Crippling Poison",         3409, "SPELL_GO_OTHER");
+    CT("corrosivep",  "Corrosive Poison",        47409, "SPELL_GO_OTHER");
+    CT("dissolventp", "Dissolvent Poison",       54010, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Explosives  (SPELL_GO via CQ_ConsTracker)
+    -- ================================================================
+    SimHdr("Explosives", 1.0, 0.4, 0.1);
+    CT("sapper",    "Goblin Sapper Charge",  13241, "SPELL_GO_OTHER");
+    CT("holywater", "Stratholme Holy Water", 17291, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Flasks  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
+    -- ================================================================
+    SimHdr("Flasks", 0.0, 0.831, 1.0);
+    CT("flask",        "Flask of Supreme Power",   17628, "SPELL_GO_OTHER");
+    CT("titans",       "Flask of the Titans",       17626, "SPELL_GO_OTHER");
+    CT("wisdom",       "Flask of Distilled Wisdom", 17627, "SPELL_GO_OTHER");
+    CT("chromaticres", "Flask of Chromatic Res.",   17629, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Battle Elixirs
+    -- ================================================================
+    SimHdr("Battle Elixirs", 0.0, 0.831, 1.0);
+    CT("mongoose",       "Elixir of the Mongoose",   17538, "SPELL_GO_OTHER");
+    CT("giants",         "Elixir of the Giants",      11405, "SPELL_GO_OTHER");
+    CT("greateragility", "Elixir of Greater Agility", 11334, "SPELL_GO_OTHER");
+    CT("agilityelixir",  "Elixir of Agility",          11328, "SPELL_GO_OTHER");
+    CT("firewater",      "Winterfall Firewater",       17038, "SPELL_GO_OTHER");
+    CT("demonslaying",   "Elixir of Demonslaying",     11406, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Guardian Elixirs
+    -- ================================================================
+    SimHdr("Guardian Elixirs", 0.0, 0.831, 1.0);
+    CT("elixirfortitude", "Elixir of Fortitude",        3593, "SPELL_GO_OTHER");
+    CT("supdef",          "Elixir of Superior Defense", 11348, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Spell Power Elixirs
+    -- ================================================================
+    SimHdr("Spell Power Elixirs", 0.0, 0.831, 1.0);
+    CT("greaterarcane",      "Greater Arcane Elixir",        17539, "SPELL_GO_OTHER");
+    CT("greaterfirepower",   "Elixir of Greater Firepower",  26276, "SPELL_GO_OTHER");
+    CT("greaterarcanepower", "Elixir of Greater Arcane Pow.", 56545, "SPELL_GO_OTHER");
+    CT("greaterfrostpower",  "Elixir of Greater Frost Pow.",  56544, "SPELL_GO_OTHER");
+    CT("greaternaturepower", "Elixir of Greater Nature Pow.", 45988, "SPELL_GO_OTHER");
+    CT("shadowpower",        "Elixir of Shadow Power",        11474, "SPELL_GO_OTHER");
+    CT("frostpower",         "Elixir of Frost Power",         21920, "SPELL_GO_OTHER");
+    CT("dreamshard",         "Dreamshard Elixir",             45427, "SPELL_GO_OTHER");
+    CT("dreamtonic",         "Dreamtonic",                    45489, "SPELL_GO_OTHER");
+    CT("arcaneelixir",       "Arcane Elixir",                 11390, "SPELL_GO_OTHER");
+    CT("firepowerelixir",    "Elixir of Firepower",            7844, "SPELL_GO_OTHER");
+    CT("elixirofthesages",   "Elixir of the Sages",           17535, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Protection Potions
+    -- ================================================================
+    SimHdr("Protection Potions", 0.0, 0.831, 1.0);
+    CT("greaterfirepot",   "Greater Fire Prot.",   17543, "SPELL_GO_OTHER");
+    CT("greaterfrostpot",  "Greater Frost Prot.",  17544, "SPELL_GO_OTHER");
+    CT("greaternaturepot", "Greater Nature Prot.", 17546, "SPELL_GO_OTHER");
+    CT("greaterarcanepot", "Greater Arcane Prot.", 17549, "SPELL_GO_OTHER");
+    CT("greatershadowpot", "Greater Shadow Prot.", 17548, "SPELL_GO_OTHER");
+    CT("greaterholypot",   "Greater Holy Prot.",   17545, "SPELL_GO_OTHER");
+    CT("frozenrune",       "Frozen Rune",          29432, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Utility Potions
+    -- ================================================================
+    SimHdr("Utility Potions", 0.0, 0.831, 1.0);
+    CT("mageblood",         "Mageblood Potion",   24363, "SPELL_GO_OTHER");
+    CT("freeactionpotion",  "Free Action Potion",  6615, "SPELL_GO_OTHER");
+    CT("restorativepotion", "Restorative Potion", 11359, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Zanza Potions
+    -- ================================================================
+    SimHdr("Zanza Potions", 0.0, 0.831, 1.0);
+    CT("spiritofzanza",    "Spirit of Zanza",    24382, "SPELL_GO_OTHER");
+    CT("swiftnessofzanza", "Swiftness of Zanza", 24383, "SPELL_GO_OTHER");
+    CT("sheenofzanza",     "Sheen of Zanza",      24417, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Juju
+    -- ================================================================
+    SimHdr("Juju", 0.0, 0.831, 1.0);
+    CT("jujupower",  "Juju Power",  16323, "SPELL_GO_OTHER");
+    CT("jujumight",  "Juju Might",  16329, "SPELL_GO_OTHER");
+    CT("jujuflurry", "Juju Flurry", 16322, "SPELL_GO_OTHER");
+    CT("jujuchill",  "Juju Chill",  16325, "SPELL_GO_OTHER");
+    CT("jujuember",  "Juju Ember",  16326, "SPELL_GO_OTHER");
+    CT("jujuescape", "Juju Escape", 16321, "SPELL_GO_OTHER");
+    CT("jujuguile",  "Juju Guile",  16327, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Blasted Lands
+    -- ================================================================
+    SimHdr("Blasted Lands", 0.0, 0.831, 1.0);
+    CT("roids",          "R.O.I.D.S.",              10667, "SPELL_GO_OTHER");
+    CT("scorpok",        "Ground Scorpok Assay",     10669, "SPELL_GO_OTHER");
+    CT("cerebralcortex", "Cerebral Cortex Compound", 10692, "SPELL_GO_OTHER");
+    CT("lungjuice",      "Lung Juice Cocktail",       10668, "SPELL_GO_OTHER");
+    CT("gizzardgum",     "Gizzard Gum",               10693, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Food & Drink
+    -- ================================================================
+    SimHdr("Food & Drink", 0.0, 0.831, 1.0);
+    CT("squid",           "Grilled Squid",             18230, "SPELL_GO_OTHER");
+    CT("nightfinsoup",    "Nightfin Soup",              18233, "SPELL_GO_OTHER");
+    CT("tuber",           "Runn Tum Tuber Surprise",    22731, "SPELL_GO_OTHER");
+    CT("desertdumpling",  "Smoked Desert Dumpling",     24800, "SPELL_GO_OTHER");
+    CT("tenderwolf",      "Tender Wolf Steak",          10256, "SPELL_GO_OTHER");
+    CT("sagefish",        "Sagefish Delight",           25888, "SPELL_GO_OTHER");
+    CT("mushroomstam",    "Hardened Mushroom",          25660, "SPELL_GO_OTHER");
+    CT("dragonbreath",    "Dragonbreath Chili",         15852, "SPELL_GO_OTHER");
+    CT("gurubashigumbo",  "Gurubashi Gumbo",            46084, "SPELL_GO_OTHER");
+    CT("telabimmedley",   "Tel'Abim Medley",            57045, "SPELL_GO_OTHER");
+    CT("telabimdelight",  "Tel'Abim Delight",           57043, "SPELL_GO_OTHER");
+    CT("telabimsurprise", "Tel'Abim Surprise",          57055, "SPELL_GO_OTHER");
+    CT("gilneasstew",     "Gilneas Hot Stew",           45626, "SPELL_GO_OTHER");
+    CT("gordokgrog",      "Gordok Green Grog",          22789, "SPELL_GO_OTHER");
+    CT("rumseyrum",       "Rumsey Rum Black Label",     25804, "SPELL_GO_OTHER");
+    CT("merlot",          "Medivh's Merlot",            57106, "SPELL_GO_OTHER");
+    CT("merlotblue",      "Medivh's Merlot Blue",       57107, "SPELL_GO_OTHER");
+    CT("herbalsalad",     "Herbal Salad",                49552, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- SECTION: Concoctions
+    -- ================================================================
+    SimHdr("Concoctions", 0.0, 0.831, 1.0);
+    CT("arcanegiants",    "Concoction: Arcane Giant",     36931, "SPELL_GO_OTHER");
+    CT("emeraldmongoose", "Concoction: Emerald Mongoose",  36928, "SPELL_GO_OTHER");
+    CT("dreamwater",      "Concoction: Dreamwater",        36934, "SPELL_GO_OTHER");
+    CTFlush();
+
+    -- ================================================================
+    -- Wire up Fire All — every cast-trackable spell
+    -- ================================================================
+    local MAPPED_SPELLS = {
+        -- Weapon Oils (AURA_CAST)
+        { 25123, "AURA_CAST_ON_OTHER" }, { 20747, "AURA_CAST_ON_OTHER" },
+        { 25122, "AURA_CAST_ON_OTHER" }, { 28898, "AURA_CAST_ON_OTHER" },
+        { 25121, "AURA_CAST_ON_OTHER" }, { 3829,  "AURA_CAST_ON_OTHER" },
+        { 3594,  "AURA_CAST_ON_OTHER" },
+        -- Weapon Stones (AURA_CAST)
+        { 22756, "AURA_CAST_ON_OTHER" }, { 16138, "AURA_CAST_ON_OTHER" },
+        { 28891, "AURA_CAST_ON_OTHER" }, { 16622, "AURA_CAST_ON_OTHER" },
+        -- Rogue Poisons — highest rank per type (SPELL_GO)
+        { 11357, "SPELL_GO_OTHER" }, { 8679,  "SPELL_GO_OTHER" },
+        { 13219, "SPELL_GO_OTHER" }, { 5763,  "SPELL_GO_OTHER" },
+        { 3408,  "SPELL_GO_OTHER" }, { 47409, "SPELL_GO_OTHER" },
+        { 54010, "SPELL_GO_OTHER" },
+        -- Explosives
+        { 13241, "SPELL_GO_OTHER" }, { 17291, "SPELL_GO_OTHER" },
+        -- Flasks
+        { 17628, "SPELL_GO_OTHER" }, { 17626, "SPELL_GO_OTHER" },
+        { 17627, "SPELL_GO_OTHER" }, { 17629, "SPELL_GO_OTHER" },
+        -- Battle Elixirs
+        { 17538, "SPELL_GO_OTHER" }, { 11405, "SPELL_GO_OTHER" },
+        { 11334, "SPELL_GO_OTHER" }, { 11328, "SPELL_GO_OTHER" },
+        { 17038, "SPELL_GO_OTHER" }, { 11406, "SPELL_GO_OTHER" },
+        -- Guardian Elixirs
+        { 3593,  "SPELL_GO_OTHER" }, { 11348, "SPELL_GO_OTHER" },
+        -- Spell Power Elixirs
+        { 17539, "SPELL_GO_OTHER" }, { 26276, "SPELL_GO_OTHER" },
+        { 56545, "SPELL_GO_OTHER" }, { 56544, "SPELL_GO_OTHER" },
+        { 45988, "SPELL_GO_OTHER" }, { 11474, "SPELL_GO_OTHER" },
+        { 21920, "SPELL_GO_OTHER" }, { 45427, "SPELL_GO_OTHER" },
+        { 45489, "SPELL_GO_OTHER" }, { 11390, "SPELL_GO_OTHER" },
+        { 7844,  "SPELL_GO_OTHER" }, { 17535, "SPELL_GO_OTHER" },
+        -- Protection Potions
+        { 17543, "SPELL_GO_OTHER" }, { 17544, "SPELL_GO_OTHER" },
+        { 17546, "SPELL_GO_OTHER" }, { 17549, "SPELL_GO_OTHER" },
+        { 17548, "SPELL_GO_OTHER" }, { 17545, "SPELL_GO_OTHER" },
+        { 29432, "SPELL_GO_OTHER" },
+        -- Utility Potions
+        { 24363, "SPELL_GO_OTHER" }, { 6615,  "SPELL_GO_OTHER" },
+        { 11359, "SPELL_GO_OTHER" },
+        -- Zanza
+        { 24382, "SPELL_GO_OTHER" }, { 24383, "SPELL_GO_OTHER" },
+        { 24417, "SPELL_GO_OTHER" },
+        -- Juju
+        { 16323, "SPELL_GO_OTHER" }, { 16329, "SPELL_GO_OTHER" },
+        { 16322, "SPELL_GO_OTHER" }, { 16325, "SPELL_GO_OTHER" },
+        { 16326, "SPELL_GO_OTHER" }, { 16321, "SPELL_GO_OTHER" },
+        { 16327, "SPELL_GO_OTHER" },
+        -- Blasted Lands
+        { 10667, "SPELL_GO_OTHER" }, { 10669, "SPELL_GO_OTHER" },
+        { 10692, "SPELL_GO_OTHER" }, { 10668, "SPELL_GO_OTHER" },
+        { 10693, "SPELL_GO_OTHER" },
+        -- Food
+        { 18230, "SPELL_GO_OTHER" }, { 18233, "SPELL_GO_OTHER" },
+        { 22731, "SPELL_GO_OTHER" }, { 24800, "SPELL_GO_OTHER" },
+        { 10256, "SPELL_GO_OTHER" }, { 25888, "SPELL_GO_OTHER" },
+        { 25660, "SPELL_GO_OTHER" }, { 15852, "SPELL_GO_OTHER" },
+        { 46084, "SPELL_GO_OTHER" }, { 57045, "SPELL_GO_OTHER" },
+        { 57043, "SPELL_GO_OTHER" }, { 57055, "SPELL_GO_OTHER" },
+        { 45626, "SPELL_GO_OTHER" }, { 22789, "SPELL_GO_OTHER" },
+        { 25804, "SPELL_GO_OTHER" }, { 57106, "SPELL_GO_OTHER" },
+        { 57107, "SPELL_GO_OTHER" }, { 49552, "SPELL_GO_OTHER" },
+        -- Concoctions
+        { 36931, "SPELL_GO_OTHER" }, { 36928, "SPELL_GO_OTHER" },
+        { 36934, "SPELL_GO_OTHER" },
+    };
+
+    fireAllBtn:SetScript("OnClick", function()
+        if not CQ_Log or not CQ_Log.isLogging then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Simulate] Start logging first (/conqlog start).|r");
+            return;
         end
-    end
+        local player = UnitName("player");
+        local fired, failed = 0, 0;
+        for _, t in ipairs(MAPPED_SPELLS) do
+            if CQ_SimulateCastEvent(t[1], player, t[2], false) then
+                fired = fired + 1;
+            else
+                failed = failed + 1;
+            end
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(
+            "|cff00ff00[Simulate] Fired " .. fired .. " consumables" ..
+            (failed > 0 and (", |cffff9900" .. failed .. " failed|r") or "") .. ".|r");
+    end);
 
     yOff = yOff + 10;
     content:SetHeight(yOff);
-
     return tab;
 end
+
 
 -- ============================================================================
 -- TAB: CONSUMABLES
@@ -2278,88 +2497,85 @@ local function CreateCommandsTab(parent)
         {
             title = "Raid Logger  ·  /conqlog",
             rows = {
-                { "/conqlog",                        "Show all subcommands in chat" },
-                { "/conqlog status",                 "Show logging status, zone, combat state" },
-                { "/conqlog start",                  "Force-start logging (bypasses all checks)" },
-                { "/conqlog stop",                   "Force-stop and finalize current session" },
-                { "/conqlog toggle",                 "Toggle out-of-combat tracking on/off" },
-                { "/conqlog export",                 "Export current raid to file" },
-                { "/conqlog exportall",              "Export all raids to one file" },
-                { "/conqlog format lua",             "Set export format to Lua" },
-                { "/conqlog format json",            "Set export format to JSON" },
-                { "/conqlog verbose",                "Toggle verbose export keys (full names)" },
-                { "/conqlog interval <sec>",         "Set auto-export interval in seconds" },
-                { "/conqlog potions",                "Show mana potion and tea usage this raid" },
-                { "/conqlog sunder",                 "Diagnose Sunder tracking  (GUID map, counts)" },
-                { "/conqlog cache",                  "Dump all in-memory cache contents" },
-                { "/conqlog benchmark",              "Show timing and data volume diagnostics" },
-                { "/conqlog superwow",               "Check client extension API status" },
-                { "/conqlog forcecheck",             "Force an immediate buff/consumable check" },
-                { "/conqlog findspells",             "Scan bags for weapon enchant items" },
-                { "/conqlog sniff",                  "Toggle broad combat log sniffer" },
-                { "/conqlog debugpotions",           "Toggle verbose potion detection output" },
-                { "/conqlog debugconsumables",       "Toggle verbose consumable / enchant output" },
-                { "/conqlog testpotion",             "Run potion pattern self-test" },
-                { "/conqlog testenchant",            "Run weapon enchant pattern self-test" },
-            },
-        },
-        {
-            title = "Buff Tracker  ·  /rab  /rabuffs",
-            rows = {
-                { "/rab",                           "Show buff tracker help" },
-                { "/rab show",                      "Show the main RABuffs window" },
-                { "/rab hide",                      "Hide the main RABuffs window" },
-                { "/rab versioncheck",              "Check addon version across raid / party" },
-                { "/rab versioncheck guild",        "Check addon version across guild" },
-                { "/rab profile list",              "List all saved profiles" },
-                { "/rab profile save <name>",       "Save current bar layout as a profile" },
-                { "/rab profile load <name>",       "Load a saved profile" },
-                { "/rab profile delete <name>",     "Delete a saved profile" },
-                { "/rab profile current",           "Show name of the active profile" },
-            },
-        },
-        {
-            title = "Buff Queries  ·  /rq  /rabq",
-            rows = {
-                { "/rq <buff>",                     "Query who has a specific buff" },
-                { "/rq not <buff>",                 "Query who is MISSING a buff" },
-                { "/rq <buff> <limit> <class>",     "Filter by count limit and/or class" },
-                { "/rq raid <buff>",                "Print result to raid chat" },
-                { "/rq party <buff>",               "Print result to party chat" },
-                { "/rq officer <buff>",             "Print result to officer chat" },
-                { "/rq w <player> <buff>",          "Whisper result to a specific player" },
-                { "/rq c <channel> <buff>",         "Output result to a channel number" },
+                { "/conqlog",                            "Show all subcommands in chat" },
+                { "/conqlog status",                     "Show logging status, zone, combat state, export settings" },
+                { "/conqlog start",                      "Force-start logging (bypasses auto-zone checks)" },
+                { "/conqlog stop",                       "Force-stop and finalize current session" },
+                { "/conqlog toggle",                     "Toggle out-of-combat tracking on/off" },
+                { "/conqlog export",                     "Export current raid to file (Nampower required)" },
+                { "/conqlog exportall",                  "Export all stored raids to one file" },
+                { "/conqlog format lua",                 "Set export format to Lua (default)" },
+                { "/conqlog format json",                "Set export format to JSON" },
+                { "/conqlog verbose",                    "Toggle verbose export keys (full names)" },
+                { "/conqlog interval <sec>",             "Set auto-export interval in seconds" },
+                { "/conqlog save",                       "Show export info (SavedVars removed; use export)" },
+                { "/conqlog sunder",                     "Diagnose Sunder tracking (GUID map, counts)" },
+                { "/conqlog cache",                      "Dump all in-memory caches (GUIDs, spells, dedup)" },
+                { "/conqlog benchmark",                  "Show timing diagnostics and data volume stats" },
+                { "/conqlog superwow",                   "Check Nampower / client extension API status" },
+                { "/conqlog forcecheck",                 "Force an immediate buff/consumable check" },
+                { "/conqlog findspells",                 "Scan bags for weapon enchant items" },
+                { "/conqlog sniff",                      "Toggle broad chat-event combat log sniffer" },
+                { "/conqlog debugcombatlog",             "Toggle SPELL_GO + chat debug log (alias: dcl)" },
+                { "/conqlog dcl",                        "Alias for /conqlog debugcombatlog" },
+                { "/conqlog debugconsumables",           "Toggle verbose consumable / enchant output" },
+                { "/conqlog testenchant",                "Run weapon enchant pattern self-test" },
+                { "/conqlog simulate",                   "Inject fake data through the real tracking pipeline" },
+                { "/conqlog debugplayer <n> [key]",      "Dump all consumable state for a player" },
             },
         },
         {
             title = "Consumable Tracker  ·  /conqcons",
             rows = {
-                { "/conqcons status",                "Show tracker status and registration info" },
-                { "/conqcons debug",                 "Toggle cast event debug output" },
-                { "/conqcons list",                  "List all tracked consumable spell IDs" },
-                { "/conqcons callbacks",             "Show registered callback functions" },
-                { "/conqcons clear",                 "Clear the spell name cache" },
+                { "/conqcons",                           "Show all subcommands in chat" },
+                { "/conqcons status",                    "Show tracker status, Nampower state, counts" },
+                { "/conqcons debug",                     "Toggle cast event debug output" },
+                { "/conqcons list",                      "List all tracked consumable spell IDs" },
+                { "/conqcons callbacks",                 "Show registered callback functions" },
+                { "/conqcons queue",                     "Show pending GUID retry queue" },
+                { "/conqcons flushqueue",                "Flush and discard the pending retry queue" },
+                { "/conqcons db",                        "Dump the persistent GUID database" },
+                { "/conqcons seeddb",                    "Seed GUID DB from current raid roster" },
+                { "/conqcons clear",                     "Clear the spell name cache" },
+            },
+        },
+        {
+            title = "Consumable Integration Test  ·  /conqconstest",
+            rows = {
+                { "/conqconstest",                       "Run integration check: tracker, callbacks, textures" },
+            },
+        },
+        {
+            title = "Combat Stats  ·  /conqcs",
+            rows = {
+                { "/conqcs",                             "Show all subcommands in chat" },
+                { "/conqcs status",                      "Show CombatStats module status" },
+                { "/conqcs debug",                       "Toggle debug output" },
+                { "/conqcs cc",                          "Show CC break counts for current raid" },
+                { "/conqcs rezzes",                      "Show battle rez usage for current raid" },
+                { "/conqcs innervate",                   "Show Innervate cast counts for current raid" },
+                { "/conqcs activeccs",                   "Show currently active crowd control effects" },
             },
         },
         {
             title = "Spell Tracker  ·  /conqspells",
             rows = {
-                { "/conqspells status",              "Show tracker status" },
-                { "/conqspells debug",               "Toggle debug output" },
-                { "/conqspells list",                "List all tracked spell IDs" },
-                { "/conqspells stats",               "Show spell cast counts for current raid" },
-                { "/conqspells guids",               "Show the GUID to player-name map" },
-                { "/conqspells rebuild",             "Force rebuild the GUID map from roster" },
+                { "/conqspells",                         "Show all subcommands in chat" },
+                { "/conqspells status",                  "Show tracker status (Nampower, GUID map size)" },
+                { "/conqspells debug",                   "Toggle debug output" },
+                { "/conqspells list",                    "List configured non-Sunder tracked spell IDs" },
+                { "/conqspells stats",                   "Show spell cast counts for current raid" },
+                { "/conqspells guids",                   "Show current GUID to player-name map" },
+                { "/conqspells rebuild",                 "Force rebuild the GUID map from roster" },
             },
         },
         {
             title = "Config Window  ·  /conqconfig",
             rows = {
-                { "/conqconfig",                     "Open or close this window" },
+                { "/conqconfig",                         "Open or close this config window" },
             },
         },
     };
-
     local INDENT  = 6;
     local CMD_W   = 186;
     local DESC_W  = CONTENT_W - 56 - CMD_W;
@@ -2417,11 +2633,11 @@ local function CreateDebugTab(parent)
     -- Debug toggles
     local dbgHdr, dbgLine = MkHeader(tab, "Debug Output", tab, "TOPLEFT", 0, -4);
 
-    -- dark box behind the 3 debug checkboxes
-    -- MkCheck offsets: -6 (first), -4, -4. Each checkbox ~26px tall. Total ~98px.
+    -- dark box behind the 3 debug checkboxes + export format radios
+    -- MkCheck offsets: -6 (first), -4, -4, label ~16px, -2, -4. Total ~170px.
     local dbgBoxBg = tab:CreateTexture(nil, "BACKGROUND");
     dbgBoxBg:SetWidth(CONTENT_W - 4);
-    dbgBoxBg:SetHeight(98);
+    dbgBoxBg:SetHeight(170);
     dbgBoxBg:SetPoint("TOPLEFT", dbgLine, "BOTTOMLEFT", 0, -3);
     dbgBoxBg:SetTexture(0.12, 0.15, 0.22, 0.95);
 
@@ -2453,8 +2669,37 @@ local function CreateDebugTab(parent)
             (CQ_Log.verboseExport and "|cff00ff00ON (full names)|r" or "|cffff9900OFF (shortened)|r"));
     end);
 
+    -- Export format label
+    local fmtLabel = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
+    fmtLabel:SetText("|cffaaaaaa Export format:|r");
+    fmtLabel:SetPoint("TOPLEFT", verboseExportCheck, "BOTTOMLEFT", 2, -8);
+
+    -- Lua radio
+    local fmtLuaCheck = MkCheck(tab, "CQ_Dbg_FmtLua", "Lua  (.lua)", fmtLabel, "BOTTOMLEFT", -2, -2);
+    fmtLuaCheck:SetScript("OnClick", function()
+        if not CQ_Log then return; end
+        CQ_Log.exportFormat = "lua";
+        CQ_Settings_Save();
+        local j = getglobal("CQ_Dbg_FmtJson");
+        if j then j:SetChecked(false); if j.CQ_SyncVisual then j.CQ_SyncVisual(); end end
+        if this.CQ_SyncVisual then this.CQ_SyncVisual(); end
+        DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[Conq] Export format: |cff00ff00Lua (.lua)|r");
+    end);
+
+    -- JSON radio
+    local fmtJsonCheck = MkCheck(tab, "CQ_Dbg_FmtJson", "JSON (.json)", fmtLuaCheck, "BOTTOMLEFT", 0, -4);
+    fmtJsonCheck:SetScript("OnClick", function()
+        if not CQ_Log then return; end
+        CQ_Log.exportFormat = "json";
+        CQ_Settings_Save();
+        local l = getglobal("CQ_Dbg_FmtLua");
+        if l then l:SetChecked(false); if l.CQ_SyncVisual then l.CQ_SyncVisual(); end end
+        if this.CQ_SyncVisual then this.CQ_SyncVisual(); end
+        DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[Conq] Export format: |cff00ff00JSON (.json)|r");
+    end);
+
     -- Diagnostics
-    local diagHdr, diagLine = MkHeader(tab, "Diagnostic Actions", verboseExportCheck, "BOTTOMLEFT", 0, -12);
+    local diagHdr, diagLine = MkHeader(tab, "Diagnostic Actions", fmtJsonCheck, "BOTTOMLEFT", 0, -12);
 
     -- dark box behind the 2-column button grid (6 rows x 27px each + padding)
     local diagBoxBg = tab:CreateTexture(nil, "BACKGROUND");
@@ -2579,502 +2824,6 @@ local function CreateDebugTab(parent)
 end
 
 -- ============================================================================
--- TAB: CAST TEST
--- Full pipeline test tab.  Every button calls CQ_SimulateCastEvent() so the
--- entire real detection path is exercised: GUID resolution, CQ_ConsTracker_Tracked
--- lookup, CQ_ConsTracker_KeyMap lookup, raid membership check,
--- CQ_ConsInt_OnConsumable, castTrackedConsumables write, raid.players write.
---
--- Layout:
---   • Top bar  : status line + "Fire All" + debug-enable reminder
---   • Sections : one per consumable category, 2-column grid of "Cast" buttons
---   • Each button label shows the consumable name; colour indicates event type:
---       cyan   = SPELL_GO (potions/sappers/poisons)
---       orange = AURA_CAST (weapon enchants/oils/stones)
---       grey   = buff-poll only (no cast event — shown for reference, disabled)
--- ============================================================================
-
-local function CreateCastTestTab(parent)
-    local tab = CreateFrame("Frame", "CQ_Tab_Casttest", parent);
-    tab:SetWidth(CONTENT_W);
-    tab:SetHeight(FRAME_H - 90);
-    tab:SetPoint("TOPLEFT", parent, "TOPLEFT", CONTENT_LEFT, CONTENT_TOP);
-    tab:Hide();
-
-    local scrollFrame = CreateFrame("ScrollFrame", "CQ_CT_Scroll", tab,
-        "UIPanelScrollFrameTemplate");
-    scrollFrame:SetWidth(CONTENT_W - 20);
-    scrollFrame:SetHeight(FRAME_H - 98);
-    scrollFrame:SetPoint("TOPLEFT", 0, 0);
-
-    local content = CreateFrame("Frame", nil, scrollFrame);
-    content:SetWidth(CONTENT_W - 36);
-    content:SetHeight(10);
-    scrollFrame:SetScrollChild(content);
-    CQ_SkinScrollFrame(scrollFrame, "CQ_CT_Scroll");
-
-    local bg = content:CreateTexture(nil, "BACKGROUND");
-    bg:SetAllPoints(content);
-    bg:SetTexture(0.12, 0.15, 0.22, 0.98);
-
-    local M     = 6;
-    local IW    = CONTENT_W - 36 - M * 2;
-    local COL_W = math.floor(IW / 2);
-    local ROW_H = 22;
-    local BTN_W = 48;
-    local BTN_H = 18;
-    local HDR_H = 16;
-    local yOff  = 6;
-
-    -- ── Section header + divider ──────────────────────────────────────────
-    local function CTHdr(text, r, g, b)
-        yOff = yOff + 10;
-        local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormal");
-        hdr:SetPoint("TOPLEFT", M, -yOff);
-        local cr = r or 0.0; local cg = g or 0.831; local cb = b or 1.0;
-        hdr:SetTextColor(cr, cg, cb);
-        hdr:SetText(text);
-        yOff = yOff + HDR_H;
-        local div = content:CreateTexture(nil, "OVERLAY");
-        div:SetWidth(IW); div:SetHeight(1);
-        div:SetPoint("TOPLEFT", M, -yOff);
-        div:SetTexture(cr * 0.6, cg * 0.6, cb * 0.6, 0.7);
-        yOff = yOff + 6;
-    end
-
-    -- ── Single cast-test button ───────────────────────────────────────────
-    -- spellID   : the spell ID to pass to CQ_SimulateCastEvent
-    -- label     : display name
-    -- eventType : "SPELL_GO_OTHER" | "AURA_CAST_ON_OTHER" | nil (disabled)
-    -- col       : 0 or 1
-    local function CTRow(uniqueSuffix, label, spellID, eventType, col)
-        local xBase = M + col * COL_W;
-
-        local btn = CreateFrame("Button", "CQ_CT_Btn_" .. uniqueSuffix, content);
-        btn:SetWidth(BTN_W); btn:SetHeight(BTN_H);
-        btn:SetPoint("TOPLEFT", xBase, -yOff);
-
-        local _fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER");
-        btn:SetFontString(_fs);
-
-        local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-        lbl:SetPoint("LEFT", btn, "RIGHT", 4, 0);
-        lbl:SetWidth(COL_W - BTN_W - 8);
-        lbl:SetJustifyH("LEFT");
-
-        if not eventType then
-            -- Buff-poll only: no cast event exists, show greyed out
-            _fs:SetText("–");
-            lbl:SetText("|cff555555" .. label .. "|r");
-            btn:SetBackdrop({
-                bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-                tile = true, tileSize = 16,
-                insets = { left=0, right=0, top=0, bottom=0 }
-            });
-            btn:SetBackdropColor(0.10, 0.10, 0.10, 0.7);
-            btn:Disable();
-        else
-            -- Cast event (all types: SPELL_GO and AURA_CAST both use the same primary style)
-            _fs:SetText("Cast");
-            lbl:SetText("|cff00ffff" .. label .. "|r");
-            CQ_SkinButton(btn, "primary");
-            local sID = spellID; local eT = eventType;
-            btn:SetScript("OnClick", function()
-                if not CQ_Log or not CQ_Log.isLogging then
-                    DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[CastTest] Start logging first (/conqlog start).|r");
-                    return;
-                end
-                local ok = CQ_SimulateCastEvent(sID, UnitName("player"), eT, false);
-                if ok then
-                    local safeLabel = string.gsub(label, "%.", "");
-                    local evLabel = (eT == "AURA_CAST_ON_OTHER" or eT == "AURA_CAST_ON_SELF")
-                        and "AURA_CAST" or "SPELL_GO";
-                    DEFAULT_CHAT_FRAME:AddMessage(
-                        "|cff00ffff[CastTest] " .. evLabel .. " → " .. safeLabel ..
-                        " (spellID=" .. sID .. ")|r");
-                end
-            end);
-        end
-
-        return btn;
-    end
-
-    -- ── Advance col/row cursor ────────────────────────────────────────────
-    local curCol = 0;
-    local function CT(suffix, label, spellID, eventType)
-        CTRow(suffix, label, spellID, eventType, curCol);
-        curCol = curCol + 1;
-        if curCol >= 2 then curCol = 0; yOff = yOff + ROW_H; end
-    end
-    local function CTFlush()
-        if curCol > 0 then curCol = 0; yOff = yOff + ROW_H; end
-    end
-
-    -- ================================================================
-    -- TOP BAR
-    -- ================================================================
-    local statusNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-    statusNote:SetPoint("TOPLEFT", M, -yOff);
-    statusNote:SetWidth(IW);
-    statusNote:SetJustifyH("LEFT");
-    statusNote:SetText("|cff00ffff Cyan|r = SPELL_GO / AURA_CAST   " ..
-        "|cff888888Grey|r = buff-poll only (no event)");
-    yOff = yOff + 16;
-
-    -- Debug hint
-    local dbgNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall");
-    dbgNote:SetPoint("TOPLEFT", M, -yOff);
-    dbgNote:SetWidth(IW);
-    dbgNote:SetJustifyH("LEFT");
-    dbgNote:SetText("|cff666666Enable /conqcons debug and /conqlog debugconsumables to trace each pipeline stage in chat.|r");
-    yOff = yOff + 14;
-
-    -- "Fire All Mapped" button
-    local fireAllBtn = CreateFrame("Button", "CQ_CT_FireAll", content);
-    fireAllBtn:SetWidth(150); fireAllBtn:SetHeight(20);
-    fireAllBtn:SetPoint("TOPLEFT", M, -yOff);
-    do
-        local _fs = fireAllBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall");
-        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER");
-        _fs:SetText("Fire All Mapped"); fireAllBtn:SetFontString(_fs);
-        CQ_SkinButton(fireAllBtn, "primary");
-    end
-
-    -- "Fire Bad GUID" button (tests retry queue)
-    local badGuidBtn = CreateFrame("Button", "CQ_CT_BadGuid", content);
-    badGuidBtn:SetWidth(140); badGuidBtn:SetHeight(20);
-    badGuidBtn:SetPoint("LEFT", fireAllBtn, "RIGHT", 6, 0);
-    do
-        local _fs = badGuidBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall");
-        _fs:SetAllPoints(); _fs:SetJustifyH("CENTER");
-        _fs:SetText("Fire Bad GUID"); badGuidBtn:SetFontString(_fs);
-        CQ_SkinButton(badGuidBtn, "ghost");
-    end
-    badGuidBtn:SetScript("OnClick", function()
-        if not CQ_Log or not CQ_Log.isLogging then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[CastTest] Start logging first.|r");
-            return;
-        end
-        -- Fire with an unresolvable GUID to exercise the 15s retry queue
-        CQ_SimulateCastEvent(25123, UnitName("player"), "SPELL_GO_OTHER", true);
-        DEFAULT_CHAT_FRAME:AddMessage(
-            "|cffff9900[CastTest] Bad GUID fired — event should land in retry queue. " ..
-            "Use /conqcons queue to inspect it.|r");
-    end);
-
-    yOff = yOff + 28;
-
-    local topDiv = content:CreateTexture(nil, "OVERLAY");
-    topDiv:SetWidth(IW); topDiv:SetHeight(1);
-    topDiv:SetPoint("TOPLEFT", M, -yOff);
-    topDiv:SetTexture(0.22, 0.30, 0.42, 0.8);
-    yOff = yOff + 8;
-
-    -- ================================================================
-    -- SECTION: Weapon Oils  (AURA_CAST via CQ_ConsTracker)
-    -- ================================================================
-    CTHdr("Weapon Oils", 1.0, 0.65, 0.1);
-    CT("brillmanaoil",     "Brilliant Mana Oil",    25123, "AURA_CAST_ON_OTHER");
-    CT("lessermanaoil",    "Lesser Mana Oil",        20747, "AURA_CAST_ON_OTHER");
-    CT("brillwizardoil",   "Brilliant Wizard Oil",   25122, "AURA_CAST_ON_OTHER");
-    CT("blessedwizardoil", "Blessed Wizard Oil",     28898, "AURA_CAST_ON_OTHER");
-    CT("wizardoil",        "Wizard Oil",             25121, "AURA_CAST_ON_OTHER");
-    CT("frostoil",         "Frost Oil",               3829, "AURA_CAST_ON_OTHER");
-    CT("shadowoil",        "Shadow Oil",              3594, "AURA_CAST_ON_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Weapon Stones  (AURA_CAST via CQ_ConsTracker)
-    -- ================================================================
-    CTHdr("Weapon Stones", 1.0, 0.65, 0.1);
-    CT("elemstone",   "Elemental Sharp. Stone", 22756, "AURA_CAST_ON_OTHER");
-    CT("densestone",  "Dense Sharp. Stone",      16138, "AURA_CAST_ON_OTHER");
-    CT("consecstone", "Consecrated Stone",       28891, "AURA_CAST_ON_OTHER");
-    CT("denseweight", "Dense Weightstone",       16622, "AURA_CAST_ON_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Rogue Poisons  (SPELL_GO via CQ_ConsTracker)
-    -- No buff bar for other players — Nampower only, all ranks.
-    -- ================================================================
-    CTHdr("Rogue Poisons", 0.0, 0.831, 1.0);
-    CT("deadlyp5",    "Deadly Poison V",         11357, "SPELL_GO_OTHER");
-    CT("deadlyp4",    "Deadly Poison IV",        11356, "SPELL_GO_OTHER");
-    CT("deadlyp3",    "Deadly Poison III",       11355, "SPELL_GO_OTHER");
-    CT("deadlyp2",    "Deadly Poison II",         2824, "SPELL_GO_OTHER");
-    CT("deadlyp1",    "Deadly Poison",            2823, "SPELL_GO_OTHER");
-    CT("instantp6",   "Instant Poison VI",        8679, "SPELL_GO_OTHER");
-    CT("instantp5",   "Instant Poison V",         8688, "SPELL_GO_OTHER");
-    CT("instantp4",   "Instant Poison IV",        8687, "SPELL_GO_OTHER");
-    CT("instantp3",   "Instant Poison III",       8686, "SPELL_GO_OTHER");
-    CT("instantp2",   "Instant Poison II",        8685, "SPELL_GO_OTHER");
-    CT("instantp1",   "Instant Poison",           8680, "SPELL_GO_OTHER");
-    CT("woundp5",     "Wound Poison V",          13219, "SPELL_GO_OTHER");
-    CT("woundp4",     "Wound Poison IV",         13218, "SPELL_GO_OTHER");
-    CT("woundp3",     "Wound Poison III",        13223, "SPELL_GO_OTHER");
-    CT("woundp2",     "Wound Poison II",         13222, "SPELL_GO_OTHER");
-    CT("woundp1",     "Wound Poison",            13220, "SPELL_GO_OTHER");
-    CT("mindnumb3",   "Mind-numbing III",         5763, "SPELL_GO_OTHER");
-    CT("mindnumb2",   "Mind-numbing II",          8694, "SPELL_GO_OTHER");
-    CT("mindnumb1",   "Mind-numbing",             5761, "SPELL_GO_OTHER");
-    CT("cripplingp2", "Crippling Poison II",      3408, "SPELL_GO_OTHER");
-    CT("cripplingp1", "Crippling Poison",         3409, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Explosives  (SPELL_GO via CQ_ConsTracker)
-    -- ================================================================
-    CTHdr("Explosives", 0.0, 0.831, 1.0);
-    CT("sapper", "Goblin Sapper Charge", 13241, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Flasks  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Flasks", 0.0, 0.831, 1.0);
-    CT("flask",        "Flask of Supreme Power",  17628, "SPELL_GO_OTHER");
-    CT("titans",       "Flask of the Titans",      17626, "SPELL_GO_OTHER");
-    CT("wisdom",       "Flask of Distilled Wisdom",17627, "SPELL_GO_OTHER");
-    CT("chromaticres", "Flask of Chromatic Res.",  17629, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Battle Elixirs  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Battle Elixirs", 0.0, 0.831, 1.0);
-    CT("mongoose",       "Elixir of the Mongoose",    17538, "SPELL_GO_OTHER");
-    CT("giants",         "Elixir of the Giants",       11405, "SPELL_GO_OTHER");
-    CT("greateragility", "Elixir of Greater Agility",  11334, "SPELL_GO_OTHER");
-    CT("agilityelixir",  "Elixir of Agility",           11328, "SPELL_GO_OTHER");
-    CT("firewater",      "Winterfall Firewater",        17038, "SPELL_GO_OTHER");
-    CT("demonslaying",   "Elixir of Demonslaying",      11406, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Guardian Elixirs  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Guardian Elixirs", 0.0, 0.831, 1.0);
-    CT("elixirfortitude", "Elixir of Fortitude",        3593, "SPELL_GO_OTHER");
-    CT("supdef",          "Elixir of Superior Defense", 11348, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Spell Power Elixirs  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Spell Power Elixirs", 0.0, 0.831, 1.0);
-    CT("greaterarcane",      "Greater Arcane Elixir",        17539, "SPELL_GO_OTHER");
-    CT("greaterfirepower",   "Elixir of Greater Firepower",  26276, "SPELL_GO_OTHER");
-    CT("greaterarcanepower", "Elixir of Greater Arcane Pow.",56545, "SPELL_GO_OTHER");
-    CT("greaterfrostpower",  "Elixir of Greater Frost Pow.", 56544, "SPELL_GO_OTHER");
-    CT("greaternaturepower", "Elixir of Greater Nature Pow.",45988, "SPELL_GO_OTHER");
-    CT("shadowpower",        "Elixir of Shadow Power",       11474, "SPELL_GO_OTHER");
-    CT("frostpower",         "Elixir of Frost Power",        21920, "SPELL_GO_OTHER");
-    CT("dreamshard",         "Dreamshard Elixir",            45427, "SPELL_GO_OTHER");
-    CT("dreamtonic",         "Dreamtonic",                   45489, "SPELL_GO_OTHER");
-    CT("arcaneelixir",       "Arcane Elixir",                11390, "SPELL_GO_OTHER");
-    CT("firepowerelixir",    "Elixir of Firepower",           7844, "SPELL_GO_OTHER");
-    CT("elixirofthesages",   "Elixir of the Sages",          17535, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Protection Potions  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Protection Potions", 0.0, 0.831, 1.0);
-    CT("greaterfirepot",   "Greater Fire Prot.",    17543, "SPELL_GO_OTHER");
-    CT("greaterfrostpot",  "Greater Frost Prot.",   17544, "SPELL_GO_OTHER");
-    CT("greaternaturepot", "Greater Nature Prot.",  17546, "SPELL_GO_OTHER");
-    CT("greaterarcanepot", "Greater Arcane Prot.",  17549, "SPELL_GO_OTHER");
-    CT("greatershadowpot", "Greater Shadow Prot.",  17548, "SPELL_GO_OTHER");
-    CT("greaterholypot",   "Greater Holy Prot.",    17545, "SPELL_GO_OTHER");
-    CT("frozenrune",       "Frozen Rune",           29432, "SPELL_GO_OTHER");
-    CT("firepot",          "Fire Prot. Potion",      7233, "SPELL_GO_OTHER");
-    CT("frostpot",         "Frost Prot. Potion",     7239, "SPELL_GO_OTHER");
-    CT("shadowpot",        "Shadow Prot. Potion",    7242, "SPELL_GO_OTHER");
-    CT("holypot",          "Holy Prot. Potion",      7245, "SPELL_GO_OTHER");
-    CT("naturepot",        "Nature Prot. Potion",    7254, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Utility Potions  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Utility Potions", 0.0, 0.831, 1.0);
-    CT("mageblood",         "Mageblood Potion",   24363, "SPELL_GO_OTHER");
-    CT("freeactionpotion",  "Free Action Potion",  6615, "SPELL_GO_OTHER");
-    CT("restorativepotion", "Restorative Potion", 11359, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Zanza  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Zanza Potions", 0.0, 0.831, 1.0);
-    CT("spiritofzanza",    "Spirit of Zanza",    24382, "SPELL_GO_OTHER");
-    CT("swiftnessofzanza", "Swiftness of Zanza", 24383, "SPELL_GO_OTHER");
-    CT("sheenofzanza",     "Sheen of Zanza",      24417, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Juju  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Juju", 0.0, 0.831, 1.0);
-    CT("jujupower",  "Juju Power",  16323, "SPELL_GO_OTHER");
-    CT("jujumight",  "Juju Might",  16329, "SPELL_GO_OTHER");
-    CT("jujuflurry", "Juju Flurry", 16322, "SPELL_GO_OTHER");
-    CT("jujuchill",  "Juju Chill",  16325, "SPELL_GO_OTHER");
-    CT("jujuember",  "Juju Ember",  16326, "SPELL_GO_OTHER");
-    CT("jujuescape", "Juju Escape", 16321, "SPELL_GO_OTHER");
-    CT("jujuguile",  "Juju Guile",  16327, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Blasted Lands  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Blasted Lands", 0.0, 0.831, 1.0);
-    CT("roids",         "R.O.I.D.S.",              10667, "SPELL_GO_OTHER");
-    CT("scorpok",       "Ground Scorpok Assay",     10669, "SPELL_GO_OTHER");
-    CT("cerebralcortex","Cerebral Cortex Compound", 10692, "SPELL_GO_OTHER");
-    CT("lungjuice",     "Lung Juice Cocktail",       10668, "SPELL_GO_OTHER");
-    CT("gizzardgum",    "Gizzard Gum",               10693, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Food & Drink  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Food & Drink", 0.0, 0.831, 1.0);
-    CT("squid",          "Grilled Squid",            18230, "SPELL_GO_OTHER");
-    CT("nightfinsoup",   "Nightfin Soup",             18233, "SPELL_GO_OTHER");
-    CT("tuber",          "Runn Tum Tuber Surprise",   22731, "SPELL_GO_OTHER");
-    CT("desertdumpling", "Smoked Desert Dumpling",    24800, "SPELL_GO_OTHER");
-    CT("tenderwolf",     "Tender Wolf Steak",         10256, "SPELL_GO_OTHER");
-    CT("sagefish",       "Sagefish Delight",          25888, "SPELL_GO_OTHER");
-    CT("mushroomstam",   "Hardened Mushroom",         25660, "SPELL_GO_OTHER");
-    CT("dragonbreath",   "Dragonbreath Chili",        15852, "SPELL_GO_OTHER");
-    CT("gurubashigumbo", "Gurubashi Gumbo",           46084, "SPELL_GO_OTHER");
-    CT("telabimmedley",  "Tel'Abim Medley",           57045, "SPELL_GO_OTHER");
-    CT("telabimdelight", "Tel'Abim Delight",          57043, "SPELL_GO_OTHER");
-    CT("telabimsurprise","Tel'Abim Surprise",         57055, "SPELL_GO_OTHER");
-    CT("gilneasstew",    "Gilneas Hot Stew",          45626, "SPELL_GO_OTHER");
-    CT("gordokgrog",     "Gordok Green Grog",         22789, "SPELL_GO_OTHER");
-    CT("rumseyrum",      "Rumsey Rum Black Label",    25804, "SPELL_GO_OTHER");
-    CT("merlot",         "Medivh's Merlot",           57106, "SPELL_GO_OTHER");
-    CT("merlotblue",     "Medivh's Merlot Blue",      57107, "SPELL_GO_OTHER");
-    CT("herbalsalad",    "Herbal Salad",               49552, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- SECTION: Concoctions  (SPELL_GO via CQ_Log_ConsumableSpellIDs)
-    -- ================================================================
-    CTHdr("Concoctions", 0.0, 0.831, 1.0);
-    CT("arcanegiants",    "Concoction: Arcane Giant",    36931, "SPELL_GO_OTHER");
-    CT("emeraldmongoose", "Concoction: Emerald Mongoose", 36928, "SPELL_GO_OTHER");
-    CT("dreamwater",      "Concoction: Dreamwater",       36934, "SPELL_GO_OTHER");
-    CTFlush();
-
-    -- ================================================================
-    -- Wire up "Fire All" — every cast-trackable spell, one representative
-    -- rank per consumable type for poisons, full list for everything else.
-    -- ================================================================
-    local MAPPED_SPELLS = {
-        -- Weapon Oils (AURA_CAST)
-        { 25123, "AURA_CAST_ON_OTHER" },  -- Brilliant Mana Oil
-        { 20747, "AURA_CAST_ON_OTHER" },  -- Lesser Mana Oil
-        { 25122, "AURA_CAST_ON_OTHER" },  -- Brilliant Wizard Oil
-        { 28898, "AURA_CAST_ON_OTHER" },  -- Blessed Wizard Oil
-        { 25121, "AURA_CAST_ON_OTHER" },  -- Wizard Oil
-        { 3829,  "AURA_CAST_ON_OTHER" },  -- Frost Oil
-        { 3594,  "AURA_CAST_ON_OTHER" },  -- Shadow Oil
-        -- Weapon Stones (AURA_CAST)
-        { 22756, "AURA_CAST_ON_OTHER" },  -- Elemental Sharpening Stone
-        { 16138, "AURA_CAST_ON_OTHER" },  -- Dense Sharpening Stone
-        { 28891, "AURA_CAST_ON_OTHER" },  -- Consecrated Stone
-        { 16622, "AURA_CAST_ON_OTHER" },  -- Dense Weightstone
-        -- Rogue Poisons — highest rank per type (SPELL_GO)
-        { 11357, "SPELL_GO_OTHER" },  -- Deadly Poison V
-        { 8679,  "SPELL_GO_OTHER" },  -- Instant Poison VI
-        { 13219, "SPELL_GO_OTHER" },  -- Wound Poison V
-        { 5763,  "SPELL_GO_OTHER" },  -- Mind-numbing Poison III
-        { 3408,  "SPELL_GO_OTHER" },  -- Crippling Poison II
-        -- Explosives
-        { 13241, "SPELL_GO_OTHER" },  -- Goblin Sapper
-        -- Flasks
-        { 17628, "SPELL_GO_OTHER" },  -- Flask of Supreme Power
-        { 17626, "SPELL_GO_OTHER" },  -- Flask of the Titans
-        { 17627, "SPELL_GO_OTHER" },  -- Flask of Distilled Wisdom
-        { 17629, "SPELL_GO_OTHER" },  -- Flask of Chromatic Resistance
-        -- Battle Elixirs
-        { 17538, "SPELL_GO_OTHER" },  { 11405, "SPELL_GO_OTHER" },
-        { 11334, "SPELL_GO_OTHER" },  { 11328, "SPELL_GO_OTHER" },
-        { 17038, "SPELL_GO_OTHER" },  { 11406, "SPELL_GO_OTHER" },
-        -- Guardian Elixirs
-        { 3593,  "SPELL_GO_OTHER" },  { 11348, "SPELL_GO_OTHER" },
-        -- Spell Power Elixirs
-        { 17539, "SPELL_GO_OTHER" },  { 26276, "SPELL_GO_OTHER" },
-        { 56545, "SPELL_GO_OTHER" },  { 56544, "SPELL_GO_OTHER" },
-        { 45988, "SPELL_GO_OTHER" },  { 11474, "SPELL_GO_OTHER" },
-        { 21920, "SPELL_GO_OTHER" },  { 45427, "SPELL_GO_OTHER" },
-        { 45489, "SPELL_GO_OTHER" },  { 11390, "SPELL_GO_OTHER" },
-        { 7844,  "SPELL_GO_OTHER" },  { 17535, "SPELL_GO_OTHER" },
-        -- Protection Potions
-        { 17543, "SPELL_GO_OTHER" },  { 17544, "SPELL_GO_OTHER" },
-        { 17546, "SPELL_GO_OTHER" },  { 17549, "SPELL_GO_OTHER" },
-        { 17548, "SPELL_GO_OTHER" },  { 17545, "SPELL_GO_OTHER" },
-        { 29432, "SPELL_GO_OTHER" },
-        -- Utility Potions
-        { 24363, "SPELL_GO_OTHER" },  { 6615,  "SPELL_GO_OTHER" },
-        { 11359, "SPELL_GO_OTHER" },
-        -- Zanza
-        { 24382, "SPELL_GO_OTHER" },  { 24383, "SPELL_GO_OTHER" },
-        { 24417, "SPELL_GO_OTHER" },
-        -- Juju
-        { 16323, "SPELL_GO_OTHER" },  { 16329, "SPELL_GO_OTHER" },
-        { 16322, "SPELL_GO_OTHER" },  { 16325, "SPELL_GO_OTHER" },
-        { 16326, "SPELL_GO_OTHER" },  { 16321, "SPELL_GO_OTHER" },
-        { 16327, "SPELL_GO_OTHER" },
-        -- Blasted Lands
-        { 10667, "SPELL_GO_OTHER" },  { 10669, "SPELL_GO_OTHER" },
-        { 10692, "SPELL_GO_OTHER" },  { 10668, "SPELL_GO_OTHER" },
-        { 10693, "SPELL_GO_OTHER" },
-        -- Food
-        { 18230, "SPELL_GO_OTHER" },  { 18233, "SPELL_GO_OTHER" },
-        { 22731, "SPELL_GO_OTHER" },  { 24800, "SPELL_GO_OTHER" },
-        { 10256, "SPELL_GO_OTHER" },  { 25888, "SPELL_GO_OTHER" },
-        { 25660, "SPELL_GO_OTHER" },  { 15852, "SPELL_GO_OTHER" },
-        { 46084, "SPELL_GO_OTHER" },  { 57045, "SPELL_GO_OTHER" },
-        { 57043, "SPELL_GO_OTHER" },  { 57055, "SPELL_GO_OTHER" },
-        { 45626, "SPELL_GO_OTHER" },  { 22789, "SPELL_GO_OTHER" },
-        { 25804, "SPELL_GO_OTHER" },  { 57106, "SPELL_GO_OTHER" },
-        { 57107, "SPELL_GO_OTHER" },  { 49552, "SPELL_GO_OTHER" },
-        -- Concoctions
-        { 36931, "SPELL_GO_OTHER" },  { 36928, "SPELL_GO_OTHER" },
-        { 36934, "SPELL_GO_OTHER" },
-    };
-
-    fireAllBtn:SetScript("OnClick", function()
-        if not CQ_Log or not CQ_Log.isLogging then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[CastTest] Start logging first (/conqlog start).|r");
-            return;
-        end
-        local player = UnitName("player");
-        local fired, failed = 0, 0;
-        for _, t in ipairs(MAPPED_SPELLS) do
-            if CQ_SimulateCastEvent(t[1], player, t[2], false) then
-                fired = fired + 1;
-            else
-                failed = failed + 1;
-            end
-        end
-        DEFAULT_CHAT_FRAME:AddMessage(
-            "|cff00ff00[CastTest] Fired " .. fired .. " mapped spells" ..
-            (failed > 0 and (", |cffff9900" .. failed .. " failed|r") or "") ..
-            ". Check /conqcons debug output.|r");
-    end);
-
-    yOff = yOff + 10;
-    content:SetHeight(yOff);
-    return tab;
-end
-
--- ============================================================================
 -- MAIN FRAME & TAB CONTROLLER
 -- ============================================================================
 
@@ -3156,7 +2905,6 @@ function CQ_Config_Create()
         { id = "commands",    label = "Commands"    },
         { id = "debug",       label = "Debug"       },
         { id = "simulate",    label = "Simulate"    },
-        { id = "casttest",    label = "Cast Test"   },
     };
 
     -- Compute tab width so all tabs fit within the frame.
@@ -3200,7 +2948,6 @@ function CQ_Config_Create()
     CreateCommandsTab(frame);
     CreateDebugTab(frame);
     CreateSimulateTab(frame);
-    CreateCastTestTab(frame);
 
     -- Version footer
     local footer = frame:CreateFontString("CQ_Config_Footer", "OVERLAY", "GameFontNormalSmall");
@@ -3217,7 +2964,7 @@ end
 
 function CQ_Config_ShowTab(tabId)
     CQ_MinimapButton.activeTab = tabId;
-    local ids = { "status", "options", "consumables", "commands", "debug", "simulate", "casttest" };
+    local ids = { "status", "options", "consumables", "commands", "debug", "simulate" };
     for _, id in ipairs(ids) do
         local panel = getglobal(TabPanelName(id));
         if panel then
@@ -3363,7 +3110,7 @@ function CQ_Config_UpdateStats()
             deathFs:SetText("|cff00cc00No deaths so far!|r");
         else
             local lines = {};
-            local startIdx = math.max(1, table.getn(deaths) - 8);
+            local startIdx = math.max(1, table.getn(deaths) - 10);
             for i = table.getn(deaths), startIdx, -1 do
                 local d = deaths[i];
                 if d then
@@ -3372,8 +3119,8 @@ function CQ_Config_UpdateStats()
                     table.insert(lines, "|cffff6666" .. (d.playerName or "?") .. "|r" .. kb);
                 end
             end
-            if table.getn(deaths) > 9 then
-                table.insert(lines, "|cff445566… " .. (table.getn(deaths) - 9) .. " earlier|r");
+            if table.getn(deaths) > 11 then
+                table.insert(lines, "|cff445566… " .. (table.getn(deaths) - 11) .. " earlier|r");
             end
             deathFs:SetText(table.concat(lines, "\n"));
         end
@@ -3400,10 +3147,10 @@ function CQ_Config_UpdateStats()
                     table.insert(notable, entry);
                 end
             end
-            if table.getn(notable) >= 9 then break; end
+            if table.getn(notable) >= 21 then break; end
         end
         if table.getn(notable) == 0 then
-            for i = table.getn(loot), math.max(1, table.getn(loot)-8), -1 do
+            for i = table.getn(loot), math.max(1, table.getn(loot)-20), -1 do
                 table.insert(notable, loot[i]);
             end
         end
@@ -3508,6 +3255,15 @@ function CQ_Config_UpdateStats()
             end
         end
         table.insert(lines, "|cff778899Sappers:|r  |cffffffff" .. sapperTotal .. "|r");
+
+        -- Stratholme Holy Water: count from castTrackedConsumables
+        local hwTotal = 0;
+        for _, entry in pairs(raid.castTrackedConsumables or {}) do
+            if entry.buffKey == "holywater" or entry.buffKey == "stratholmeholywater" then
+                hwTotal = hwTotal + 1;
+            end
+        end
+        table.insert(lines, "|cff778899Holy Water:|r  |cffffffff" .. hwTotal .. "|r");
 
         potFs:SetText(table.concat(lines, "\n"));
     end
@@ -3628,18 +3384,6 @@ function CQ_Config_Update()
     local autoUploadCb = getglobal("CQ_Opt_AutoUploadCheck");
     if autoUploadCb then autoUploadCb:SetChecked(CQ_Log.autoUploadOnFinalize); if autoUploadCb.CQ_SyncVisual then autoUploadCb.CQ_SyncVisual(); end end
 
-    -- Auto-export interval editbox
-    local exportEdit = getglobal("CQ_Opt_ExportIntervalEdit");
-    if exportEdit and not exportEdit.hasFocus then
-        exportEdit:SetText(tostring(CQ_Log.autoExportInterval or 600));
-    end
-
-    -- Buff poll interval editbox
-    local pollEdit = getglobal("CQ_Opt_PollIntervalEdit");
-    if pollEdit and not pollEdit.hasFocus then
-        pollEdit:SetText(tostring(CQ_Log.checkInterval or 15));
-    end
-
     -- Zone checkboxes
     local ZONE_LIST_UPD = {
         "Molten Core", "Blackwing Lair", "Zul'Gurub",
@@ -3698,6 +3442,12 @@ function CQ_Config_Update()
 
     local verboseExport = getglobal("CQ_Dbg_VerboseExport");
     if verboseExport then verboseExport:SetChecked(CQ_Log.verboseExport); if verboseExport.CQ_SyncVisual then verboseExport.CQ_SyncVisual(); end end
+
+    local fmtLua  = getglobal("CQ_Dbg_FmtLua");
+    local fmtJson = getglobal("CQ_Dbg_FmtJson");
+    local isJson  = (CQ_Log.exportFormat == "json");
+    if fmtLua  then fmtLua:SetChecked(not isJson);  if fmtLua.CQ_SyncVisual  then fmtLua.CQ_SyncVisual();  end end
+    if fmtJson then fmtJson:SetChecked(isJson);      if fmtJson.CQ_SyncVisual then fmtJson.CQ_SyncVisual(); end end
 
     -- Footer
     local footer = getglobal("CQ_Config_Footer");

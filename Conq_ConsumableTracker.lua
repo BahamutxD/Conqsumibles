@@ -66,6 +66,9 @@ CQ_ConsTracker_Tracked = {
     -- Goblin Sapper Charge
     [13241] = "Goblin Sapper Charge",
 
+    -- Stratholme Holy Water (same detection path as Goblin Sapper)
+    [17291] = "Stratholme Holy Water",
+
     -- Rogue Poisons (fire as CAST, not MAINHAND/OFFHAND)
     [8679]  = "Instant Poison VI",
     [8688]  = "Instant Poison V",
@@ -83,11 +86,25 @@ CQ_ConsTracker_Tracked = {
     [5761]  = "Mind-numbing Poison",
     [3408]  = "Crippling Poison II",
     [3409]  = "Crippling Poison",
+
+    -- Custom server poisons (Corrosive and Dissolvent)
+    [47409] = "Corrosive Poison",   -- itemId 47409 (custom server)
+    [54010] = "Dissolvent Poison",  -- itemId 54010 (custom server)
     [11357] = "Deadly Poison V",
     [11356] = "Deadly Poison IV",
     [11355] = "Deadly Poison III",
     [2824]  = "Deadly Poison II",
     [2823]  = "Deadly Poison",
+
+    -- DCL-confirmed server-specific poison application spell IDs.
+    -- These fire as SPELL_GO_SELF when a rogue coats their weapon on this server.
+    -- They map to the same buffKeys as the vanilla IDs above.
+    [25351] = "Deadly Poison",        -- DCL confirmed
+    [11340] = "Instant Poison",       -- DCL confirmed
+    [11399] = "Mind-numbing Poison",  -- DCL confirmed
+    [11202] = "Crippling Poison",     -- DCL confirmed
+    [52575] = "Corrosive Poison",     -- DCL confirmed
+    [45881] = "Dissolvent Poison",    -- DCL confirmed
 
     -- Custom server consumables (add server-specific items here)
     -- [SPELLID] = "Name",

@@ -18,6 +18,9 @@ CQ_ConsTracker_KeyMap = {
     -- Goblin Sapper Charge
     [13241] = "goblinsapper",
 
+    -- Stratholme Holy Water (same detection path as Goblin Sapper)
+    [17291] = "stratholmeholywater",
+
     -- Mana Oils
     [25123] = "brillmanaoil",           -- Brilliant Mana Oil
     [20747] = "lessermanaoil",          -- Lesser Mana Oil (old ID 25121 was wrong)
@@ -67,6 +70,18 @@ CQ_ConsTracker_KeyMap = {
 
     [3408]  = "cripplingpoison",        -- Crippling Poison II
     [3409]  = "cripplingpoison",        -- Crippling Poison
+
+    -- Custom server poisons
+    [47409] = "corrosivepoison",        -- Corrosive Poison
+    [54010] = "dissolventpoison",       -- Dissolvent Poison
+
+    -- DCL-confirmed server-specific poison application spell IDs
+    [25351] = "deadlypoison",           -- Deadly Poison       (DCL confirmed)
+    [11340] = "instantpoison",          -- Instant Poison      (DCL confirmed)
+    [11399] = "mindnumbingpoison",      -- Mind-numbing Poison (DCL confirmed)
+    [11202] = "cripplingpoison",        -- Crippling Poison    (DCL confirmed)
+    [52575] = "corrosivepoison",        -- Corrosive Poison    (DCL confirmed)
+    [45881] = "dissolventpoison",       -- Dissolvent Poison   (DCL confirmed)
 };
 
 -- Buffs that share textures and need special handling

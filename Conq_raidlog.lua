@@ -27,7 +27,7 @@ CQ_Log = {
         epic      = true,  -- purple
         legendary = true,  -- orange
     },
-    debugPotions = false, -- Enable debug output for potion tracking
+
     debugConsumables = false, -- Enable debug output for consumable tracking
     sniffing = false, -- Sniff all combat log events to find weapon enchant message
     lastParticipationCheck = 0, -- Track when we last updated participation times
@@ -243,8 +243,22 @@ CQ_Log_ConsumableDurations = {
     elementalsharpeningstone = 1800,
     denseweightstone = 1800,
     
+    -- Mana restore items (no persistent buff - duration 0, tracked by cast count only)
+    majorMana    = 0,  -- Major Mana Potion
+    nordanaarTea = 0,  -- Nordanaar Herbal Tea
+
     -- Explosives (no persistent buff - duration 0, tracked by cast count only)
-    goblinsapper = 0,
+    goblinsapper        = 0,
+    stratholmeholywater = 0,  -- Stratholme Holy Water (no persistent buff)
+
+    -- Rogue Poisons (no persistent buff bar for other players - cast-count only)
+    deadlypoison        = 0,
+    instantpoison       = 0,
+    woundpoison         = 0,
+    mindnumbingpoison   = 0,
+    cripplingpoison     = 0,
+    corrosivepoison     = 0,
+    dissolventpoison    = 0,
     
     -- Blasted Lands buffs (all 1 hour)
     roids = 3600,           -- Winterfall Firewater (+Strength)
@@ -276,24 +290,6 @@ CQ_Log_ConsumableDurations = {
     -- and stored in raid.spells, not raid.players[name].consumables.
     -- Adding them here would cause the periodic buff scanner to detect them on
     -- every player who HAS the buff, which is not what we want.
-};
-
--- Potion/Tea tracking patterns
--- Self:   "You gain 1741 Mana from Restore Mana."
--- Self:   "You gain 983 Mana from Tea."
--- Others: "Durotavich gains 2218 Mana from Durotavich 's Restore Mana."
--- Others: "Durotavich gains 913 Mana from Durotavich 's Tea."
--- Patterns are broad enough to catch both formats.
-CQ_Log_PotionPatterns = {
-    majorMana = {
-        "Restore Mana",   -- Matches "from Restore Mana" and "from Name 's Restore Mana"
-    },
-    nordanaarTea = {
-        "from.*Tea",      -- Matches "from Tea" and "from Name 's Tea" but not "Your Tea heals"
-    },
-    limitinvulpotion = {
-        "Invulnerability", -- Matches "You gain Invulnerability." and "Name gains Invulnerability."
-    },
 };
 
 -- ============================================================================
@@ -356,6 +352,9 @@ CQ_Log_ConsumableSpellIDs = {
     [24363] = "mageblood",          -- Mageblood Potion (Mana Regeneration)
     [6615]  = "freeactionpotion",   -- Free Action Potion                     ← DCL confirmed
     [11359] = "restorativepotion",  -- Restorative Potion
+    [3169]  = "limitinvulpotion",   -- Limited Invulnerability Potion         ← DCL confirmed
+    [17531] = "majorMana",          -- Major Mana Potion (restore event)      ← DCL confirmed
+    [19398] = "nordanaarTea",       -- Nordanaar Herbal Tea                   ← DCL confirmed
     -- ---- Protection Potions ------------------------------------------------
     [17543] = "greaterfirepot",     -- Greater Fire Protection Potion         ← DCL confirmed
     [17544] = "greaterfrostpot",    -- Greater Frost Protection Potion
@@ -386,6 +385,10 @@ CQ_Log_ConsumableSpellIDs = {
     [36931] = "arcanegiants",       -- Concoction of the Arcane Giant
     [36928] = "emeraldmongoose",    -- Concoction of the Emerald Mongoose
     [36934] = "dreamwater",         -- Concoction of the Dreamwater
+    -- ---- Explosives / Thrown -----------------------------------------------
+    [13241] = "goblinsapper",        -- Goblin Sapper Charge                  ← DCL confirmed
+    [17291] = "stratholmeholywater", -- Stratholme Holy Water                 ← DCL confirmed
+    [11350] = "oilofimmolation",     -- Oil of Immolation                     ← DCL confirmed
     -- ---- Food & Drink ------------------------------------------------------
     -- All cast spell IDs confirmed via DCL in-game testing.
     [18230] = "squid",              -- Grilled Squid
@@ -419,6 +422,57 @@ end
 -- Mageblood is a periodic buff that re-fires every 5s; 60s collapses that into one use.
 CQ_Log_BuffUseDedup = {};
 CQ_Log_BUFFUSE_DEDUP_WINDOW = 60; -- seconds
+
+-- Thrown AoE dedup: consumables with duration=0 (Goblin Sapper, Stratholme Holy Water,
+-- Oil of Immolation, etc.) fire one SPELL_GO per target hit, and may also fire both
+-- SPELL_GO_SELF and SPELL_GO_OTHER for the same throw.  Deduplicate on
+-- (playerName .. buffKey) with a short 2-second window so only the first hit counts.
+-- Keys present in this set are eligible; all others skip this check entirely.
+CQ_Log_ThrownAoeDedup = {};
+CQ_Log_THROWN_AOE_DEDUP_WINDOW = 2; -- seconds
+CQ_Log_ThrownAoeKeys = {}; -- populated below from zero-duration consumables
+for k, dur in pairs(CQ_Log_ConsumableDurations) do
+    if dur == 0 then CQ_Log_ThrownAoeKeys[k] = true; end
+end
+
+-- Spell IDs already handled by CQ_CastEventFrame (Conq_ConsumableTracker.lua).
+-- CQ_SpellGoFrame must NOT call CQ_Log_RecordBuffUse for these, because
+-- ConsumableTracker fires its own SPELL_GO listener and records via
+-- CQ_ConsInt_OnConsumable. Recording in both places causes double-counting.
+-- This set must stay in sync with CQ_ConsTracker_Tracked in ConsumableTracker.lua.
+CQ_Log_ConsTrackerOwnedSpellIDs = {
+    -- Weapon enchants (oils, stones)
+    [25123] = true,  -- Brilliant Mana Oil
+    [20747] = true,  -- Lesser Mana Oil
+    [25122] = true,  -- Brilliant Wizard Oil
+    [28898] = true,  -- Blessed Wizard Oil
+    [25121] = true,  -- Wizard Oil
+    [16138] = true,  -- Dense Sharpening Stone
+    [22756] = true,  -- Elemental Sharpening Stone
+    [28891] = true,  -- Consecrated Sharpening Stone
+    [16622] = true,  -- Dense Weightstone
+    [3829]  = true,  -- Frost Oil
+    [3594]  = true,  -- Shadow Oil
+    -- Thrown AoE
+    [13241] = true,  -- Goblin Sapper Charge
+    [17291] = true,  -- Stratholme Holy Water
+    -- Rogue Poisons
+    [8679]  = true,  [8688] = true,  [8687] = true,  [8686] = true,
+    [8685]  = true,  [8680] = true,
+    [13219] = true,  [13218] = true, [13223] = true, [13222] = true, [13220] = true,
+    [5763]  = true,  [8694] = true,  [5761] = true,
+    [3408]  = true,  [3409] = true,
+    [11357] = true,  [11356] = true, [11355] = true, [2824] = true, [2823] = true,
+    [47409] = true,  -- Corrosive Poison
+    [54010] = true,  -- Dissolvent Poison
+    -- DCL-confirmed server-specific poison application IDs (owned by ConsumableTracker)
+    [25351] = true,  -- Deadly Poison       (DCL confirmed)
+    [11340] = true,  -- Instant Poison      (DCL confirmed)
+    [11399] = true,  -- Mind-numbing Poison (DCL confirmed)
+    [11202] = true,  -- Crippling Poison    (DCL confirmed)
+    [52575] = true,  -- Corrosive Poison    (DCL confirmed)
+    [45881] = true,  -- Dissolvent Poison   (DCL confirmed)
+};
 
 -- ============================================================================
 -- SPELL_GO handler for consumable use counting (Nampower).
@@ -478,10 +532,7 @@ end
 -- ============================================================================
 
 -- Goblin Sapper Charge fires many damage hits per detonation (one per target hit).
--- We deduplicate by recording the last time we counted a sapper for each player;
--- any further hits within SAPPER_DEDUP_WINDOW seconds are ignored.
-CQ_Log_SapperDedup = {};   -- [playerName] = GetTime() of last counted detonation
-CQ_Log_SAPPER_DEDUP_WINDOW = 2; -- seconds
+-- Deduplication is handled by CQ_Log_ThrownAoeDedup (shared with Holy Water etc.).
 
 -- Raid log data. Guarded so the SavedVariable loaded from disk is never
 -- overwritten at file-load time (PLAYER_LOGIN hasn't fired yet here).
@@ -553,29 +604,6 @@ function CQ_Log_EscapeString(str)
     str = string.gsub(str, "\r", "\\r");
     str = string.gsub(str, "\t", "\\t");
     return str;
-end
-
--- Check if a player has any potion/tea usage - NEW FUNCTION
-function CQ_Log_HasPotionUsage(playerPotionData)
-    if not playerPotionData then return false; end
-    
-    local totalUsage = (playerPotionData.majorMana or 0)
-                     + (playerPotionData.nordanaarTea or 0)
-                     + (playerPotionData.limitinvulpotion or 0);
-    return totalUsage > 0;
-end
-
--- Filter player data to remove players with 0 potion/tea usage - NEW FUNCTION
-function CQ_Log_FilterPotionData(potionsTable)
-    local filtered = {};
-    
-    for playerName, potionData in pairs(potionsTable) do
-        if CQ_Log_HasPotionUsage(potionData) then
-            filtered[playerName] = potionData;
-        end
-    end
-    
-    return filtered;
 end
 
 -- Serialize a Lua table to Lua format - MODIFIED for filtering
@@ -684,12 +712,6 @@ function CQ_Log_SerializeToLua(tbl, indent, maxDepth, isRootRaid)
             value = nil;
         end
 
-        -- FILTER: potions block - strip empty entries
-        if isRootRaid and key == "potions" and type(value) == "table" then
-            value = CQ_Log_FilterPotionData(value);
-            if next(value) == nil then value = nil; end
-        end
-
         if value ~= nil then
             local keyStr;
             if type(key) == "string" then
@@ -725,75 +747,343 @@ function CQ_Log_SerializeToLua(tbl, indent, maxDepth, isRootRaid)
     return table.concat(parts);
 end
 
--- Serialize a Lua table to JSON format - MODIFIED for filtering
-function CQ_Log_SerializeToJSON(tbl, indent, maxDepth, isRootRaid)
-    indent = indent or 0;
-    maxDepth = maxDepth or 10;
-    
-    if indent > maxDepth then
-        return "null";
-    end
-    
-    local spacing = string.rep(" ", indent);
-    local parts = {};
-    table.insert(parts, "{\n");
-    local first = true;
-    
-    -- Sort keys for consistent output
-    local keys = {};
-    for key, _ in pairs(tbl) do
-        table.insert(keys, key);
-    end
-    table.sort(keys, function(a, b) return tostring(a) < tostring(b); end);
-    
-    for _, key in ipairs(keys) do
-        local value = tbl[key];
+-- ============================================================================
+-- COMPACT JSON EXPORT  (schema v1)
+-- Produces a much smaller file than the old recursive dump by:
+--   • String interning: consumable keys, spell names, mob names, item names,
+--     class names are stored once in lookup arrays (_C _S _M _I _K) and
+--     referenced everywhere else by integer index (0-based).
+--   • Structural flattening: every multi-field object becomes a plain array.
+--   • Float rounding: uptimes truncated to 2 decimal places.
+--   • Short top-level keys (v, meta, zone, start, end, ok, gold, …).
+-- The old CQ_Log_SerializeToJSON (recursive generic dump) is kept below as
+-- a private helper used only by the Lua-format path; it is no longer called
+-- for the JSON export path.
+-- ============================================================================
 
-        -- FILTER: skip internal runtime fields
-        if type(key) == "string" and CQ_Log_ExcludeFromExport[key] then
-            value = nil;
-        end
+-- Low-level helpers ---------------------------------------------------------
 
-        -- FILTER: If this is the "potions" key in root raid data, filter it
-        if isRootRaid and key == "potions" and type(value) == "table" then
-            value = CQ_Log_FilterPotionData(value);
-            -- Skip empty potions table
-            if next(value) == nil then
-                value = nil;
-            end
+-- Append a JSON string literal (with escaping) to a parts table.
+local function CJ_Str(parts, s)
+    table.insert(parts, "\"");
+    table.insert(parts, CQ_Log_EscapeString(s or ""));
+    table.insert(parts, "\"");
+end
+
+-- Append a number, rounding to `dp` decimal places (default: no rounding).
+local function CJ_Num(parts, n, dp)
+    if dp then
+        -- Lua 5.1 string.format supports %f
+        table.insert(parts, string.format("%." .. dp .. "f", n));
+    else
+        table.insert(parts, tostring(n));
+    end
+end
+
+-- Intern a string into a lookup array; return its 0-based index.
+-- `arr` is the ordered list, `idx` is the reverse map string->position.
+local function CJ_Intern(arr, idx, s)
+    if not s or s == "" then return 0; end
+    if idx[s] then return idx[s]; end
+    table.insert(arr, s);
+    local pos = table.getn(arr) - 1;  -- 0-based
+    idx[s] = pos;
+    return pos;
+end
+
+-- Serialize a lookup array as a compact JSON array on one line.
+local function CJ_LookupArray(parts, arr)
+    table.insert(parts, "[");
+    for i = 1, table.getn(arr) do
+        if i > 1 then table.insert(parts, ","); end
+        table.insert(parts, "\"");
+        table.insert(parts, CQ_Log_EscapeString(arr[i]));
+        table.insert(parts, "\"");
+    end
+    table.insert(parts, "]");
+end
+
+-- Main compact serializer ---------------------------------------------------
+
+-- Builds and returns the complete compact JSON string for one raid object.
+function CQ_Log_BuildCompactJSON(raid)
+    -- ---- 1. Build string intern tables ------------------------------------
+    -- _C  consumable buffKeys  (players[].consumables keys)
+    -- _S  spell / buff names   (spells[][].spellName)
+    -- _M  mob / attacker names (deaths[].killedBy)
+    -- _I  item names           (loot[].itemName)
+    -- _K  class names          (players[].class)
+    local _C, _Ci = {}, {};
+    local _S, _Si = {}, {};
+    local _M, _Mi = {}, {};
+    local _I, _Ii = {}, {};
+    local _K, _Ki = {}, {};
+
+    -- Walk through the raid data to populate interns
+    for _, pData in pairs(raid.players or {}) do
+        if pData.class and pData.class ~= "" then
+            CJ_Intern(_K, _Ki, pData.class);
         end
-        
-        if value ~= nil then
-            if not first then
-                table.insert(parts, ",\n");
-            end
-            first = false;
-            
-            table.insert(parts, spacing);
-            table.insert(parts, "  \"");
-            table.insert(parts, CQ_Log_EscapeString(tostring(key)));
-            table.insert(parts, "\": ");
-            
-            if type(value) == "table" then
-                table.insert(parts, CQ_Log_SerializeToJSON(value, indent + 1, maxDepth, false));
-            elseif type(value) == "string" then
-                table.insert(parts, "\"");
-                table.insert(parts, CQ_Log_EscapeString(value));
-                table.insert(parts, "\"");
-            elseif type(value) == "number" then
-                table.insert(parts, tostring(value));
-            elseif type(value) == "boolean" then
-                table.insert(parts, value and "true" or "false");
-            else
-                table.insert(parts, "null");
+        for buffKey, _ in pairs(pData.consumables or {}) do
+            CJ_Intern(_C, _Ci, buffKey);
+        end
+    end
+    for _, deathEntry in ipairs(raid.deaths or {}) do
+        if deathEntry.killedBy then
+            CJ_Intern(_M, _Mi, deathEntry.killedBy);
+        end
+    end
+    for _, lootEntry in ipairs(raid.loot or {}) do
+        if lootEntry.itemName then
+            CJ_Intern(_I, _Ii, lootEntry.itemName);
+        end
+    end
+    for _, spellsByKey in pairs(raid.spells or {}) do
+        for _, spellData in pairs(spellsByKey) do
+            if spellData.spellName then
+                CJ_Intern(_S, _Si, spellData.spellName);
             end
         end
     end
-    
-    table.insert(parts, "\n");
-    table.insert(parts, spacing);
-    table.insert(parts, "}");
-    return table.concat(parts);
+    for _, rezData in pairs(raid.rezzes or {}) do
+        if type(rezData) == "table" then
+            if rezData.spellName then CJ_Intern(_S, _Si, rezData.spellName); end
+        end
+    end
+
+    -- ---- 2. Serialize -----------------------------------------------------
+    local p = {};  -- parts array
+
+    table.insert(p, "{");
+
+    -- Schema version
+    table.insert(p, "\"v\":1,");
+
+    -- Metadata
+    local meta = raid.metadata or {};
+    table.insert(p, "\"meta\":{");
+    table.insert(p, "\"addonVersion\":"); CJ_Str(p, meta.addonVersion or ""); table.insert(p, ",");
+    table.insert(p, "\"lockoutId\":"); CJ_Str(p, tostring(meta.lockoutId or "")); table.insert(p, ",");
+    table.insert(p, "\"playerGuild\":"); CJ_Str(p, meta.playerGuild or ""); table.insert(p, ",");
+    table.insert(p, "\"playerName\":"); CJ_Str(p, meta.playerName or ""); table.insert(p, ",");
+    table.insert(p, "\"playerRealm\":"); CJ_Str(p, meta.playerRealm or ""); table.insert(p, ",");
+    table.insert(p, "\"raidSize\":"); table.insert(p, tostring(meta.raidSize or 0));
+    table.insert(p, "},");
+
+    -- Top-level scalars
+    table.insert(p, "\"zone\":"); CJ_Str(p, raid.zone or ""); table.insert(p, ",");
+    table.insert(p, "\"start\":"); table.insert(p, tostring(raid.startTime or 0)); table.insert(p, ",");
+    table.insert(p, "\"end\":"); table.insert(p, tostring(raid.endTime or 0)); table.insert(p, ",");
+    table.insert(p, "\"ok\":"); table.insert(p, raid.completed and "true" or "false"); table.insert(p, ",");
+    table.insert(p, "\"gold\":"); table.insert(p, tostring(raid.totalMoneyCopper or 0)); table.insert(p, ",");
+
+    -- Lookup arrays
+    table.insert(p, "\"_C\":"); CJ_LookupArray(p, _C); table.insert(p, ",");
+    table.insert(p, "\"_S\":"); CJ_LookupArray(p, _S); table.insert(p, ",");
+    table.insert(p, "\"_M\":"); CJ_LookupArray(p, _M); table.insert(p, ",");
+    table.insert(p, "\"_I\":"); CJ_LookupArray(p, _I); table.insert(p, ",");
+    table.insert(p, "\"_K\":"); CJ_LookupArray(p, _K); table.insert(p, ",");
+
+    -- Deaths: [[timestamp, playerName, killedByIdx], ...]
+    table.insert(p, "\"deaths\":[");
+    local deaths = raid.deaths or {};
+    for i = 1, table.getn(deaths) do
+        if i > 1 then table.insert(p, ","); end
+        local d = deaths[i];
+        table.insert(p, "[");
+        table.insert(p, tostring(d.timestamp or 0)); table.insert(p, ",");
+        CJ_Str(p, d.playerName or ""); table.insert(p, ",");
+        table.insert(p, tostring(_Mi[d.killedBy or ""] or 0));
+        table.insert(p, "]");
+    end
+    table.insert(p, "],");
+
+    -- Loot: [[itemId, itemNameIdx, playerName, quality], ...]
+    table.insert(p, "\"loot\":[");
+    local loot = raid.loot or {};
+    for i = 1, table.getn(loot) do
+        if i > 1 then table.insert(p, ","); end
+        local l = loot[i];
+        table.insert(p, "[");
+        table.insert(p, tostring(l.itemId or 0)); table.insert(p, ",");
+        table.insert(p, tostring(_Ii[l.itemName or ""] or 0)); table.insert(p, ",");
+        CJ_Str(p, l.playerName or ""); table.insert(p, ",");
+        CJ_Str(p, l.itemQuality or "");
+        table.insert(p, "]");
+    end
+    table.insert(p, "],");
+
+    -- Rezzes: {"PlayerName": [spellNameIdx, count], ...}
+    local rezzes = raid.rezzes or {};
+    table.insert(p, "\"rezzes\":{");
+    local rezFirst = true;
+    for playerName, rezData in pairs(rezzes) do
+        if not rezFirst then table.insert(p, ","); end
+        rezFirst = false;
+        CJ_Str(p, playerName); table.insert(p, ":[");
+        if type(rezData) == "table" then
+            table.insert(p, tostring(_Si[rezData.spellName or ""] or 0)); table.insert(p, ",");
+            table.insert(p, tostring(rezData.count or 0));
+        else
+            table.insert(p, "0,0");
+        end
+        table.insert(p, "]");
+    end
+    table.insert(p, "},");
+
+    -- Innervates: {"Caster": {"c": count, "t": {"Target": count}}}
+    local innervates = raid.innervates or {};
+    table.insert(p, "\"innervates\":{");
+    local innFirst = true;
+    for caster, innData in pairs(innervates) do
+        if not innFirst then table.insert(p, ","); end
+        innFirst = false;
+        CJ_Str(p, caster); table.insert(p, ":{\"c\":");
+        if type(innData) == "table" then
+            table.insert(p, tostring(innData.count or innData.c or 0));
+            local targets = innData.targets or innData.t or {};
+            table.insert(p, ",\"t\":{");
+            local tFirst = true;
+            for target, cnt in pairs(targets) do
+                if not tFirst then table.insert(p, ","); end
+                tFirst = false;
+                CJ_Str(p, target); table.insert(p, ":"); table.insert(p, tostring(cnt));
+            end
+            table.insert(p, "}");
+        else
+            table.insert(p, "0,\"t\":{}");
+        end
+        table.insert(p, "}");
+    end
+    table.insert(p, "},");
+
+    -- Spells (class buffs + sunder): {"Player":{"buffKey":[spellNameIdx,count],...},...}
+    local spells = raid.spells or {};
+    table.insert(p, "\"spells\":{");
+    local spFirst = true;
+    for playerName, spellsByKey in pairs(spells) do
+        if not spFirst then table.insert(p, ","); end
+        spFirst = false;
+        CJ_Str(p, playerName); table.insert(p, ":{");
+        local skFirst = true;
+        for spellKey, spellData in pairs(spellsByKey) do
+            if not skFirst then table.insert(p, ","); end
+            skFirst = false;
+            CJ_Str(p, spellKey); table.insert(p, ":[");
+            table.insert(p, tostring(_Si[spellData.spellName or ""] or 0)); table.insert(p, ",");
+            table.insert(p, tostring(spellData.count or 0));
+            table.insert(p, "]");
+        end
+        table.insert(p, "}");
+    end
+    table.insert(p, "},");
+
+    -- CC breaks: {"Player":[[timestamp,mobIdx,ccType],...], ...}
+    local ccBreaks = raid.ccBreaks or {};
+    table.insert(p, "\"cc\":{");
+    local ccFirst = true;
+    for playerName, ccList in pairs(ccBreaks) do
+        if not ccFirst then table.insert(p, ","); end
+        ccFirst = false;
+        CJ_Str(p, playerName); table.insert(p, ":[");
+        local cFirst = true;
+        for _, cc in ipairs(ccList) do
+            if not cFirst then table.insert(p, ","); end
+            cFirst = false;
+            table.insert(p, "[");
+            table.insert(p, tostring(cc.timestamp or cc[1] or 0)); table.insert(p, ",");
+            table.insert(p, tostring(_Mi[cc.mobName or cc[2] or ""] or 0)); table.insert(p, ",");
+            CJ_Str(p, cc.ccType or cc[3] or "");
+            table.insert(p, "]");
+        end
+        table.insert(p, "]");
+    end
+    table.insert(p, "},");
+
+    -- Potions (zero-duration consumables tracked separately):
+    -- {"Player":{"majorMana":N,"nordanaarTea":N,...}, ...}
+    -- These keys live in raid.players[].consumables but have duration=0 so
+    -- uptime is always 0; we lift them into a flat per-player object.
+    local zeroDurationKeys = {};
+    for k, dur in pairs(CQ_Log_ConsumableDurations) do
+        if dur == 0 then zeroDurationKeys[k] = true; end
+    end
+
+    table.insert(p, "\"potions\":{");
+    local potFirst = true;
+    for playerName, pData in pairs(raid.players or {}) do
+        local potMap = {};
+        for buffKey, cData in pairs(pData.consumables or {}) do
+            if zeroDurationKeys[buffKey] and (cData.applications or 0) > 0 then
+                potMap[buffKey] = cData.applications;
+            end
+        end
+        if next(potMap) ~= nil then
+            if not potFirst then table.insert(p, ","); end
+            potFirst = false;
+            CJ_Str(p, playerName); table.insert(p, ":{");
+            local pmFirst = true;
+            for buffKey, cnt in pairs(potMap) do
+                if not pmFirst then table.insert(p, ","); end
+                pmFirst = false;
+                CJ_Str(p, buffKey); table.insert(p, ":"); table.insert(p, tostring(cnt));
+            end
+            table.insert(p, "}");
+        end
+    end
+    table.insert(p, "},");
+
+    -- Players: {"Name":{"k":classIdx,"d":deaths,"f":firstSeen,"l":lastSeen,
+    --                    "p":participationTime,"c":{"consIdx":[apps,uptime],...}}}
+    table.insert(p, "\"players\":{");
+    local plFirst = true;
+    for playerName, pData in pairs(raid.players or {}) do
+        if not plFirst then table.insert(p, ","); end
+        plFirst = false;
+        CJ_Str(p, playerName); table.insert(p, ":{");
+        table.insert(p, "\"k\":"); table.insert(p, tostring(_Ki[pData.class or ""] or 0)); table.insert(p, ",");
+        table.insert(p, "\"d\":"); table.insert(p, tostring(pData.deaths or 0)); table.insert(p, ",");
+        table.insert(p, "\"f\":"); table.insert(p, tostring(pData.firstSeen or 0)); table.insert(p, ",");
+        table.insert(p, "\"l\":"); table.insert(p, tostring(pData.lastSeen or 0)); table.insert(p, ",");
+        table.insert(p, "\"p\":"); table.insert(p, tostring(math.floor(pData.participationTime or 0))); table.insert(p, ",");
+        -- Consumables: only non-zero-duration, non-zero-app entries
+        table.insert(p, "\"c\":{");
+        local consFirst = true;
+        for buffKey, cData in pairs(pData.consumables or {}) do
+            if not zeroDurationKeys[buffKey] and (cData.applications or 0) > 0 then
+                if not consFirst then table.insert(p, ","); end
+                consFirst = false;
+                table.insert(p, "\""); table.insert(p, tostring(_Ci[buffKey] or 0)); table.insert(p, "\":[");
+                table.insert(p, tostring(cData.applications or 0)); table.insert(p, ",");
+                -- Round uptime to 2 decimal places
+                local uptime = cData.totalUptime or 0;
+                table.insert(p, string.format("%.2f", uptime));
+                table.insert(p, "]");
+            end
+        end
+        table.insert(p, "}}");
+    end
+    table.insert(p, "},");
+
+    -- castTrackedConsumables: {"Player.buffKey":[playerName,spellID,timestamp], ...}
+    local ctc = raid.castTrackedConsumables or {};
+    table.insert(p, "\"castTracked\":{");
+    local ctcFirst = true;
+    for compositeKey, v in pairs(ctc) do
+        if not ctcFirst then table.insert(p, ","); end
+        ctcFirst = false;
+        CJ_Str(p, compositeKey); table.insert(p, ":[");
+        CJ_Str(p, v.playerName or ""); table.insert(p, ",");
+        table.insert(p, tostring(v.spellID or 0)); table.insert(p, ",");
+        table.insert(p, tostring(v.timestamp or 0));
+        table.insert(p, "]");
+    end
+    table.insert(p, "}");
+
+    -- Close root object
+    table.insert(p, "}");
+
+    return table.concat(p);
 end
 
 -- Build a friendly filename stem: e.g. "Naxxramas-120226" (zone-DDMMYY)
@@ -838,23 +1128,9 @@ function CQ_Log_ExportToFile(silent)
     local parts = {};
     
     if CQ_Log.exportFormat == "json" then
-        -- JSON format
-        table.insert(parts, "{\n");
-        table.insert(parts, "  \"_comment\": \"Conqsumibles Raid Log Export\",\n");
-        table.insert(parts, "  \"raidId\": \"");
-        table.insert(parts, CQ_Log.currentRaidId);
-        table.insert(parts, "\",\n");
-        table.insert(parts, "  \"zone\": \"");
-        table.insert(parts, CQ_Log_EscapeString(raid.zone or "Unknown"));
-        table.insert(parts, "\",\n");
-        table.insert(parts, "  \"exportDate\": \"");
-        table.insert(parts, CQ_SafeDate("%Y-%m-%d %H:%M:%S"));
-        table.insert(parts, "\",\n");
-        table.insert(parts, "  \"version\": \"");
-        table.insert(parts, CQui_RaidLogs.version);
-        table.insert(parts, "\",\n");
-        table.insert(parts, CQ_Log_SerializeToJSON(raid, 1, 10, true));
-        table.insert(parts, "\n}\n");
+        -- Compact JSON format (schema v1)
+        table.insert(parts, CQ_Log_BuildCompactJSON(raid));
+        table.insert(parts, "\n");
     else
         table.insert(parts, "CQ_RaidExport = ");
         table.insert(parts, CQ_Log_SerializeToLua(raid, 0, 10, true));
@@ -899,31 +1175,19 @@ function CQ_Log_ExportAllRaids()
     local parts = {};
     
     if CQ_Log.exportFormat == "json" then
-        -- JSON format
-        table.insert(parts, "{\n");
-        table.insert(parts, "  \"_comment\": \"Conqsumibles All Raids Export\",\n");
-        table.insert(parts, "  \"exportDate\": \"");
-        table.insert(parts, CQ_SafeDate("%Y-%m-%d %H:%M:%S"));
-        table.insert(parts, "\",\n");
-        table.insert(parts, "  \"version\": \"");
-        table.insert(parts, CQui_RaidLogs.version);
-        table.insert(parts, "\",\n");
-        table.insert(parts, "  \"raids\": {\n");
-        
+        -- Compact JSON format (schema v1): array of raid objects
+        table.insert(parts, "{");
         local first = true;
         for raidId, raidData in pairs(CQui_RaidLogs.raids) do
             if not first then
-                table.insert(parts, ",\n");
+                table.insert(parts, ",");
             end
             first = false;
-            
-            table.insert(parts, "    \"");
+            table.insert(parts, "\"");
             table.insert(parts, CQ_Log_EscapeString(raidId));
-            table.insert(parts, "\": ");
-            table.insert(parts, CQ_Log_SerializeToJSON(raidData, 2, 10, true));
+            table.insert(parts, "\":");
+            table.insert(parts, CQ_Log_BuildCompactJSON(raidData));
         end
-        
-        table.insert(parts, "\n  }\n");
         table.insert(parts, "}\n");
     else
         table.insert(parts, "CQ_AllRaidsExport = {\n");
@@ -1019,7 +1283,6 @@ function CQ_Log_InitializeRaid()
         endTime = nil,
         zone = currentZone,
         players = {},
-        potions = {}, -- Track Major Mana Potions and Nordanaar Herbal Tea
         castTrackedConsumables = {}, -- Track consumables detected via SPELL_GO
         isBaselineScan = true, -- Suppresses false +1 on first PerformCheck after a fresh init (cleared after first pass, absent after recovery)
         deaths = {}, -- Track player deaths: [{playerName, killedBy, timestamp}]
@@ -1037,7 +1300,7 @@ function CQ_Log_InitializeRaid()
     };
     
     -- Reset per-raid transient state
-    CQ_Log_SapperDedup = {};
+    CQ_Log_ThrownAoeDedup = {};
     CQ_Log_PendingGuidQueue = {};
 
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RAB Log] Raid logging started for " .. (CQ_Log.currentZone or currentZone) .. "|r");
@@ -1161,12 +1424,14 @@ CQ_Log_ConsumableCatalog = {
     },
     -- ---- Miscellaneous Potions ------------------------------------------
     {
-        header = "Miscellaneous Potions",
+        header = "Potions & Consumables",
         items = {
-            { key = "mageblood",         label = "Mageblood Potion" , itemId = 20007 },
-            { key = "restorativepotion",  label = "Restorative Potion" , itemId = 9030 },
-            { key = "freeactionpotion",   label = "Free Action Potion" , itemId = 5634 },
-            { key = "limitinvulpotion",   label = "Limited Invulnerability Potion" , itemId = 3387 },
+            { key = "majorMana",         label = "Major Mana Potion",                itemId = 13444 },
+            { key = "nordanaarTea",      label = "Nordanaar Herbal Tea",             itemId = 18253 },
+            { key = "mageblood",         label = "Mageblood Potion",                 itemId = 20007 },
+            { key = "restorativepotion", label = "Restorative Potion",               itemId = 9030  },
+            { key = "freeactionpotion",  label = "Free Action Potion",               itemId = 5634  },
+            { key = "limitinvulpotion",  label = "Limited Invulnerability Potion",   itemId = 3387  },
         },
     },
     -- ---- Weapon Enchants & Oils -----------------------------------------
@@ -1184,6 +1449,19 @@ CQ_Log_ConsumableCatalog = {
             { key = "elementalsharpeningstone", label = "Elemental Sharpening Stone" , itemId = 18262 },
             { key = "consecratedstone",         label = "Consecrated Sharpening Stone" , itemId = 23122 },
             { key = "denseweightstone",         label = "Dense Weightstone" , itemId = 12643 },
+        },
+    },
+    -- ---- Rogue Poisons --------------------------------------------------
+    {
+        header = "Rogue Poisons",
+        items = {
+            { key = "deadlypoison",       label = "Deadly Poison",        itemId = 20844 },
+            { key = "instantpoison",      label = "Instant Poison",       itemId = 8928  },
+            { key = "woundpoison",        label = "Wound Poison",         itemId = 10922 },
+            { key = "mindnumbingpoison",  label = "Mind-numbing Poison",  itemId = 9186  },
+            { key = "cripplingpoison",    label = "Crippling Poison",     itemId = 3776  },
+            { key = "corrosivepoison",    label = "Corrosive Poison",     itemId = 47409 },
+            { key = "dissolventpoison",   label = "Dissolvent Poison",    itemId = 54010 },
         },
     },
     -- ---- Juju Buffs -----------------------------------------------------
@@ -1247,8 +1525,9 @@ CQ_Log_ConsumableCatalog = {
     {
         header = "Explosives",
         items = {
-            { key = "goblinsapper",    label = "Goblin Sapper Charge" , itemId = 10646 },
-            { key = "oilofimmolation", label = "Oil of Immolation" , itemId = 8956 },
+            { key = "goblinsapper",         label = "Goblin Sapper Charge",    itemId = 10646 },
+            { key = "stratholmeholywater",  label = "Stratholme Holy Water",   itemId = 13180 },
+            { key = "oilofimmolation",      label = "Oil of Immolation",       itemId = 8956 },
         },
     },
     -- ---- Concoctions ----------------------------------------------------
@@ -1874,30 +2153,28 @@ function CQ_Log_PerformCheck()
     end
 end
 
--- Combat log event for potion/tea tracking
--- Messages format:
--- Major Mana: "You gain XXX Mana from Restore Mana." / "PlayerName gains XXX Mana from Restore Mana."
--- Tea Mana:   "You gain XXX Mana from Tea."           / "PlayerName gains XXX Mana from Tea."
--- Tea Health: "Your Tea heals you for XXX."           / "PlayerName's Tea heals PlayerName for XXX."
 -- ============================================================================
--- Record a single chat-event-confirmed consumable use for a player.
+-- RECORD BUFF USE
 -- Increments consumables[buffKey].applications and creates the entry if needed.
 -- Returns true if the use was recorded, false if dedup suppressed it.
 -- ============================================================================
-function CQ_Log_RecordBuffUse(playerName, buffKey)
+function CQ_Log_RecordBuffUse(playerName, buffKey, skipBuffUseDedup)
     if not CQ_Log.isLogging or not CQ_Log.currentRaidId then return false; end
     local raid = CQui_RaidLogs.raids[CQ_Log.currentRaidId];
     if not raid then return false; end
 
     -- Dedup: same player, same buffKey within window → skip
-    local dedupKey = playerName .. "." .. buffKey;
-    local now = GetTime();
-    if CQ_Log_BuffUseDedup[dedupKey] then
-        if now - CQ_Log_BuffUseDedup[dedupKey] < CQ_Log_BUFFUSE_DEDUP_WINDOW then
-            return false;
+    -- (Skipped for thrown AoE items; ThrownAoeDedup is their authoritative gate.)
+    if not skipBuffUseDedup then
+        local dedupKey = playerName .. "." .. buffKey;
+        local now = GetTime();
+        if CQ_Log_BuffUseDedup[dedupKey] then
+            if now - CQ_Log_BuffUseDedup[dedupKey] < CQ_Log_BUFFUSE_DEDUP_WINDOW then
+                return false;
+            end
         end
+        CQ_Log_BuffUseDedup[dedupKey] = now;
     end
-    CQ_Log_BuffUseDedup[dedupKey] = now;
 
     -- Ensure player entry exists
     if not raid.players[playerName] then
@@ -1934,7 +2211,7 @@ function CQ_Log_RecordBuffUse(playerName, buffKey)
     raid.players[playerName].consumables[buffKey].applications =
         raid.players[playerName].consumables[buffKey].applications + 1;
 
-    if CQ_Log.debugConsumables or CQ_Log.debugPotions then
+    if CQ_Log.debugConsumables then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[CHAT-USE] " .. playerName ..
             " used " .. buffKey ..
             " (total: " .. raid.players[playerName].consumables[buffKey].applications .. ")|r");
@@ -1942,110 +2219,6 @@ function CQ_Log_RecordBuffUse(playerName, buffKey)
     return true;
 end
 
-function CQ_Log_CombatLogEvent()
-    if CQ_Log.debugPotions then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff888888[POTION DEBUG] Event: " .. (event or "?") .. " | Message: " .. (arg1 or "?") .. "|r");
-    end
-
-    if not CQ_Log.isLogging or not CQ_Log.currentRaidId then
-        if CQ_Log.debugPotions then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[POTION DEBUG] Not logging (isLogging=" .. tostring(CQ_Log.isLogging) .. ", raidId=" .. tostring(CQ_Log.currentRaidId) .. ") - use /conqlog status|r");
-        end
-        return;
-    end
-
-    local raid = CQui_RaidLogs.raids[CQ_Log.currentRaidId];
-    if not raid then return; end
-
-    local playerName;
-    local message = arg1;
-
-    -- Filter out totem buffs
-    if string.find(message, " Totem ") then
-        return;
-    end
-
-    if event == "CHAT_MSG_SPELL_SELF_BUFF" or event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
-        playerName = UnitName("player");
-    elseif event == "CHAT_MSG_SPELL_PARTY_BUFF" or
-           event == "CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS" or
-           event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF" or
-           event == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS" then
-        if string.find(message, "^You gain") or string.find(message, "^Your Tea heals") then
-            playerName = UnitName("player");
-        else
-            local _, _, extractedName = string.find(message, "^(.+) gains");
-            if not extractedName then
-                _, _, extractedName = string.find(message, "^(.+)'s Tea heals");
-            end
-            if extractedName then
-                if string.find(extractedName, "%(") then
-                    return; -- pet, ignore
-                end
-                playerName = extractedName;
-            end
-        end
-    end
-
-    if not playerName then return; end
-
-    -- Verify the player is in our raid
-    local isInRaid = playerName == UnitName("player");
-    if not isInRaid then
-        for i = 1, GetNumRaidMembers() do
-            if UnitName("raid" .. i) == playerName then
-                isInRaid = true;
-                break;
-            end
-        end
-    end
-    if not isInRaid then return; end
-
-    if not raid.potions then raid.potions = {}; end
-    if not raid.potions[playerName] then
-        raid.potions[playerName] = { majorMana = 0, nordanaarTea = 0, limitinvulpotion = 0 };
-    end
-
-    -- Major Mana Potion
-    for _, pattern in ipairs(CQ_Log_PotionPatterns.majorMana) do
-        if string.find(message, pattern) then
-            raid.potions[playerName].majorMana = raid.potions[playerName].majorMana + 1;
-            if CQ_Log.debugPotions then
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[POTION] " .. playerName .. " used Major Mana Potion (total: " .. raid.potions[playerName].majorMana .. ")|r");
-            end
-            return;
-        end
-    end
-
-    -- Nordanaar Herbal Tea
-    for _, pattern in ipairs(CQ_Log_PotionPatterns.nordanaarTea) do
-        if string.find(message, pattern) then
-            raid.potions[playerName].nordanaarTea = raid.potions[playerName].nordanaarTea + 1;
-            if CQ_Log.debugPotions then
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[POTION] " .. playerName .. " used Nordanaar Tea (total: " .. raid.potions[playerName].nordanaarTea .. ")|r");
-            end
-            return;
-        end
-    end
-
-    -- Limited Invulnerability Potion
-    -- Fires on CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS:       "You gain Invulnerability."
-    -- Fires on CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS: "Name gains Invulnerability."
-    if CQ_Log.trackedItems and CQ_Log.trackedItems["limitinvulpotion"] ~= false then
-        for _, pattern in ipairs(CQ_Log_PotionPatterns.limitinvulpotion) do
-            if string.find(message, pattern) then
-                if not raid.potions[playerName].limitinvulpotion then
-                    raid.potions[playerName].limitinvulpotion = 0;
-                end
-                raid.potions[playerName].limitinvulpotion = raid.potions[playerName].limitinvulpotion + 1;
-                if CQ_Log.debugPotions then
-                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[POTION] " .. playerName .. " used Limited Invulnerability Potion (total: " .. raid.potions[playerName].limitinvulpotion .. ")|r");
-                end
-                return;
-            end
-        end
-    end
-end
 
 -- Map the exact enchant-application chat message substring to a buffKey.
 -- When a player applies a weapon oil or stone, the client prints one of:
@@ -2199,95 +2372,6 @@ function CQ_Log_WeaponEnchantEvent()
     end
 end
 
--- Combat log event for Goblin Sapper Charge tracking.
--- The sapper hits every enemy (and the caster) in range, so one detonation generates
--- many CHAT_MSG_SPELL_SELF_DAMAGE messages.  We use a per-player dedup window to
--- count only one use regardless of how many targets were hit.
---
--- Self message:   "Your Goblin Sapper Charge hits <target> for X."       (CHAT_MSG_SPELL_SELF_DAMAGE)
--- Others message: "PlayerName's Goblin Sapper Charge hits <target> for X." (CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE)
-function CQ_Log_SapperEvent()
-    if not CQ_Log.isLogging or not CQ_Log.currentRaidId then return; end
-
-    local message = arg1;
-    if not string.find(message, "Goblin Sapper Charge") then return; end
-
-    local raid = CQui_RaidLogs.raids[CQ_Log.currentRaidId];
-    if not raid then return; end
-
-    -- Determine who used the sapper
-    local playerName;
-    if event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
-        playerName = UnitName("player");
-    elseif event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE" then
-        -- "PlayerName's Goblin Sapper Charge hits ..."
-        local _, _, extractedName = string.find(message, "^(.+)'s Goblin Sapper Charge");
-        if extractedName and not string.find(extractedName, "%(") then
-            playerName = extractedName;
-        end
-    end
-
-    if not playerName then return; end
-
-    -- Verify the player is in our raid
-    local isInRaid = playerName == UnitName("player");
-    if not isInRaid then
-        for i = 1, GetNumRaidMembers() do
-            if UnitName("raid" .. i) == playerName then
-                isInRaid = true;
-                break;
-            end
-        end
-    end
-    if not isInRaid then return; end
-
-    -- Deduplicate: ignore if we already counted a sapper for this player very recently
-    local now = GetTime();
-    local lastSapper = CQ_Log_SapperDedup[playerName] or 0;
-    if (now - lastSapper) < CQ_Log_SAPPER_DEDUP_WINDOW then
-        return;
-    end
-    CQ_Log_SapperDedup[playerName] = now;
-
-    -- Record in players consumables table
-    if not raid.players[playerName] then
-        local raidIndex = CQ_Log_GetRaidIndex(playerName);
-        local _, playerClass;
-        if raidIndex then
-            _, playerClass = UnitClass("raid" .. raidIndex);
-        end
-        raid.players[playerName] = {
-            class = playerClass or "Unknown",
-            participationTime = 0,
-            lastSeen = time(),
-            firstSeen = time(),
-            consumables = {}
-        };
-    end
-
-    if not raid.players[playerName].consumables then
-        raid.players[playerName].consumables = {};
-    end
-
-    if not raid.players[playerName].consumables["goblinsapper"] then
-        raid.players[playerName].consumables["goblinsapper"] = {
-            applications = 0,
-            totalUptime = 0,
-            lastCheckHad = false,
-            lastCheckTime = GetTime(),
-            lastTimeRemaining = 0
-        };
-    end
-
-    raid.players[playerName].consumables["goblinsapper"].applications =
-        raid.players[playerName].consumables["goblinsapper"].applications + 1;
-    raid.players[playerName].consumables["goblinsapper"].lastCheckTime = GetTime();
-
-    if CQ_Log.debugConsumables then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[SAPPER] " .. playerName .. " used Goblin Sapper Charge (total: " ..
-            raid.players[playerName].consumables["goblinsapper"].applications .. ")|r");
-    end
-end
 
 -- ============================================================================
 -- SUNDER ARMOR TRACKING
@@ -2601,12 +2685,35 @@ CQ_SpellGoFrame:SetScript("OnEvent", function()
     local buffKey = CQ_Log_ConsumableSpellIDs[spellID];
     if buffKey and CQ_Log.isLogging then
         if not (CQ_Log.trackedItems and CQ_Log.trackedItems[buffKey] == false) then
-            local playerName = CQ_SpellGo_ResolveGuid(casterGuid);
-            if playerName then
-                CQ_Log_RecordBuffUse(playerName, buffKey);
-            elseif CQ_Log.debugConsumables then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[CONS CAST] Unresolved GUID spellID=" ..
-                    tostring(spellID) .. " key=" .. buffKey .. "|r");
+            -- Skip spells owned by CQ_CastEventFrame (Conq_ConsumableTracker.lua).
+            -- Those fire their own SPELL_GO listener and record via CQ_ConsInt_OnConsumable.
+            -- Recording here too would double-count every application (e.g. Goblin Sapper = 2).
+            if not CQ_Log_ConsTrackerOwnedSpellIDs[spellID] then
+                local playerName = CQ_SpellGo_ResolveGuid(casterGuid);
+                if playerName then
+                    -- Thrown AoE items fire one SPELL_GO per target hit AND potentially both
+                    -- SELF and OTHER for the same throw. Suppress all but the first within window.
+                    -- (Sapper/Holy Water are in CQ_Log_ConsTrackerOwnedSpellIDs so never reach here;
+                    -- Oil of Immolation is NOT in ConsumableTracker and must still be deduped.)
+                    local skipRecord = false;
+                    if CQ_Log_ThrownAoeKeys[buffKey] then
+                        local aoeKey = playerName .. "." .. buffKey;
+                        local lastThrow = CQ_Log_ThrownAoeDedup[aoeKey] or 0;
+                        if (GetTime() - lastThrow) < CQ_Log_THROWN_AOE_DEDUP_WINDOW then
+                            skipRecord = true;
+                        else
+                            CQ_Log_ThrownAoeDedup[aoeKey] = GetTime();
+                        end
+                    end
+                    if not skipRecord then
+                        -- skipBuffUseDedup=true: ThrownAoeDedup is the authoritative gate;
+                        -- the 60s BuffUseDedup would wrongly suppress a second throw in the same fight.
+                        CQ_Log_RecordBuffUse(playerName, buffKey, true);
+                    end
+                elseif CQ_Log.debugConsumables then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[CONS CAST] Unresolved GUID spellID=" ..
+                        tostring(spellID) .. " key=" .. buffKey .. "|r");
+                end
             end
         end
     end
@@ -2965,19 +3072,7 @@ function CQ_Log_Init()
     RAB_Core_Register("RAID_ROSTER_UPDATE", "raidlog_roster", CQ_Log_GroupUpdate);
     RAB_Core_Register("PARTY_MEMBERS_CHANGED", "raidlog_party", CQ_Log_GroupUpdate);
 
-    -- Mana potion and Nordanaar Tea tracked via combat log message patterns
-    RAB_Core_Register("CHAT_MSG_SPELL_SELF_BUFF", "raidlog_potions", CQ_Log_CombatLogEvent);
-    RAB_Core_Register("CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS", "raidlog_potions", CQ_Log_CombatLogEvent);
-    RAB_Core_Register("CHAT_MSG_SPELL_PARTY_BUFF", "raidlog_potions", CQ_Log_CombatLogEvent);
-    RAB_Core_Register("CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS", "raidlog_potions", CQ_Log_CombatLogEvent);
-    RAB_Core_Register("CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF", "raidlog_potions", CQ_Log_CombatLogEvent);
-    RAB_Core_Register("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS", "raidlog_potions", CQ_Log_CombatLogEvent);
-
-    -- Goblin Sapper Charge tracked via damage events (no buff icon)
-    RAB_Core_Register("CHAT_MSG_SPELL_SELF_DAMAGE", "raidlog_sapper", CQ_Log_SapperEvent);
-    RAB_Core_Register("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE", "raidlog_sapper", CQ_Log_SapperEvent);
-
-    -- Sunder Armor, consumables, and class buffs: primary counting via SPELL_GO
+    -- All consumables (including Tea, Mana Potions, Sapper, Holy Water) tracked via SPELL_GO.
     -- (CQ_SpellGoFrame unified dispatcher), name resolution via
     -- CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE (CQ_SunderNameFrame).
     -- Both frames are registered at file-load time above.
@@ -3068,7 +3163,6 @@ SlashCmdList["CONQLOG"] = function(msg)
         end
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Total raids logged: " .. CQ_Log_CountRaids() .. "|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Track out of combat: " .. tostring(CQ_Log.trackOutOfCombat) .. "|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Debug potions: " .. tostring(CQ_Log.debugPotions) .. "|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Nampower WriteCustomFile export: " .. tostring(CQ_Log.hasFileExport) .. "|r");
         if CQ_Log.hasFileExport then
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Export format: " .. CQ_Log.exportFormat .. "|r");
@@ -3111,59 +3205,6 @@ SlashCmdList["CONQLOG"] = function(msg)
             end
         end
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RAB Log] === END TEST ===|r");
-    elseif msg == "testpotion" or msg == "testpotions" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RAB Log] === POTION PATTERN TEST ===|r");
-        local testMessages = {
-            { msg = "You gain 1741 Mana from Restore Mana.",                        expect = "majorMana" },
-            { msg = "Durotavich gains 2218 Mana from Durotavich 's Restore Mana.", expect = "majorMana" },
-            { msg = "You gain 983 Mana from Tea.",                                  expect = "nordanaarTea" },
-            { msg = "Durotavich gains 913 Mana from Durotavich 's Tea.",            expect = "nordanaarTea" },
-            { msg = "Your Tea heals you for 611.",                                  expect = "IGNORED (heal)" },
-            { msg = "Durotavich's Tea heals Durotavich for 400.",                   expect = "IGNORED (heal)" },
-            { msg = "You gain Invulnerability.",                                    expect = "limitinvulpotion" },
-            { msg = "Cabesilla gains Invulnerability.",                             expect = "limitinvulpotion" },
-        };
-        for _, t in ipairs(testMessages) do
-            local matched = "NO MATCH";
-            if string.find(t.msg, "Restore Mana") then
-                matched = "majorMana";
-            elseif string.find(t.msg, "from.*Tea") then
-                matched = "nordanaarTea";
-            elseif string.find(t.msg, "Your Tea heals") or string.find(t.msg, "'s Tea heals") then
-                matched = "IGNORED (heal)";
-            elseif string.find(t.msg, "Invulnerability") then
-                matched = "limitinvulpotion";
-            end
-            local color = (matched == t.expect) and "|cff00ff00" or "|cffff0000";
-            DEFAULT_CHAT_FRAME:AddMessage(color .. "[" .. (matched == t.expect and "OK" or "FAIL") .. "] " .. t.msg .. "|r");
-            DEFAULT_CHAT_FRAME:AddMessage("       Expected: " .. t.expect .. "  Got: " .. matched);
-        end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RAB Log] === END TEST ===|r");
-    elseif msg == "potions" or msg == "showpotions" then
-        -- Show current potion counts for active raid
-        if not CQ_Log.currentRaidId or not CQui_RaidLogs.raids[CQ_Log.currentRaidId] then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RAB Log] No active raid session|r");
-        else
-            local raid = CQui_RaidLogs.raids[CQ_Log.currentRaidId];
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00=== POTION USAGE THIS RAID ===|r");
-            local found = false;
-            for playerName, potionData in pairs(raid.potions) do
-                if (potionData.majorMana or 0) > 0 or (potionData.nordanaarTea or 0) > 0 or (potionData.limitinvulpotion or 0) > 0 then
-                    DEFAULT_CHAT_FRAME:AddMessage("|cffffffff" .. playerName .. "|r: ManaPotion=" .. (potionData.majorMana or 0) .. "  Tea=" .. (potionData.nordanaarTea or 0) .. "  LimInvul=" .. (potionData.limitinvulpotion or 0));
-                    found = true;
-                end
-            end
-            if not found then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900No potion/tea usage recorded yet|r");
-            end
-        end
-    elseif msg == "debugpotions" or msg == "debugpotion" then
-        CQ_Log.debugPotions = not CQ_Log.debugPotions;
-        if CQ_Log.debugPotions then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Potion debug mode ENABLED|r");
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900Potion debug mode DISABLED|r");
-        end
     elseif msg == "debugconsumables" or msg == "debugconsumable" then
         CQ_Log.debugConsumables = not CQ_Log.debugConsumables;
         if CQ_Log.debugConsumables then
@@ -3340,17 +3381,17 @@ SlashCmdList["CONQLOG"] = function(msg)
             end
         end
 
-        -- 3) Sapper dedup table
+        -- 3) Thrown AoE dedup table (Sapper, Holy Water, Oil of Immolation, etc.)
         local sapperCount = 0;
-        for _ in pairs(CQ_Log_SapperDedup) do sapperCount = sapperCount + 1; end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Sapper Dedup Table (" .. sapperCount .. " entries):|r");
+        for _ in pairs(CQ_Log_ThrownAoeDedup) do sapperCount = sapperCount + 1; end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Thrown AoE Dedup Table (" .. sapperCount .. " entries):|r");
         if sapperCount == 0 then
             DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa  (empty)|r");
         else
             local now = GetTime();
-            for player, ts in pairs(CQ_Log_SapperDedup) do
+            for key, ts in pairs(CQ_Log_ThrownAoeDedup) do
                 local age = string.format("%.1fs ago", now - ts);
-                DEFAULT_CHAT_FRAME:AddMessage("|cffffffff  " .. player .. "|r: last counted " .. age);
+                DEFAULT_CHAT_FRAME:AddMessage("|cffffffff  " .. key .. "|r: last counted " .. age);
             end
         end
 
@@ -3458,12 +3499,8 @@ SlashCmdList["CONQLOG"] = function(msg)
                 end
             end
 
-            local manaTotal = 0;
-            local teaTotal  = 0;
-            for _, potData in pairs(raid.potions or {}) do
-                manaTotal = manaTotal + (potData.majorMana or 0);
-                teaTotal  = teaTotal  + (potData.nordanaarTea or 0);
-            end
+            local guidCount2 = 0;
+            for _ in pairs(CQ_Log_GuidMap) do guidCount2 = guidCount2 + 1; end
 
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00--- Current Raid Data Volume ---");
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Players tracked:        " .. playerCount .. "|r");
@@ -3471,13 +3508,7 @@ SlashCmdList["CONQLOG"] = function(msg)
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Cast-tracked entries:    " .. ctcCount .. "|r");
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Deaths recorded:         " .. deathCount .. "|r");
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Loot entries:            " .. lootCount .. "|r");
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Sunder casters:          " .. spellPlayerCount .. " (" .. totalSpellCasts .. " total casts)|r");
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Mana potions (raid):     " .. manaTotal .. "|r");
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Nordanaar Tea (raid):    " .. teaTotal .. "|r");
-
-            -- GUID map & pending queue
-            local guidCount2 = 0;
-            for _ in pairs(CQ_Log_GuidMap) do guidCount2 = guidCount2 + 1; end
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Spell casters:           " .. spellPlayerCount .. " (" .. totalSpellCasts .. " total casts)|r");
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00GUID map size:           " .. guidCount2 .. "|r");
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Pending GUID queue:      " .. table.getn(CQ_Log_PendingGuidQueue) .. "|r");
         else
@@ -3775,13 +3806,6 @@ SlashCmdList["CONQLOG"] = function(msg)
                         DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa No consumable entries recorded yet.|r");
                     end
                 end
-                -- Also show potion data
-                local potData = raid.potions and raid.potions[targetName];
-                if potData then
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format(
-                        "|cffaaaaaa Potions: majorMana=%d  tea=%d  limitinvul=%d|r",
-                        potData.majorMana or 0, potData.nordanaarTea or 0, potData.limitinvulpotion or 0));
-                end
             end
         end
     else
@@ -3789,10 +3813,7 @@ SlashCmdList["CONQLOG"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog start - Force start logging (ignores zone/combat/raid checks)|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog stop - Force stop logging|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog toggle - Toggle out-of-combat tracking|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog debugpotions - Toggle verbose potion detection output|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog testpotion - Test potion pattern matching|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog testenchant - Test weapon enchant pattern matching|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog potions - Show potion/tea counts for current raid|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog debugplayer <Name> [key] - Dump all consumable state for a player|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog debugconsumables - Toggle weapon/consumable debug output|r");
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/conqlog sunder - Diagnose Sunder Armor tracking (GUID map, frame, recorded casts)|r");
@@ -4103,103 +4124,3 @@ initFrame:SetScript("OnEvent", function()
     CQ_Log_Init();
     this:UnregisterEvent("PLAYER_LOGIN");
 end);
-
--- ============================================================================
--- POTION EVENT DIAGNOSTIC  /potdiag
--- Listens on every buff-related chat event and prints any message that contains
--- a keyword, so you can see the exact raw string and which event it fires on.
--- Usage:
---   /potdiag on          start listening
---   /potdiag off         stop listening
---   /potdiag test        run pattern-match test against known messages
--- ============================================================================
-CQ_PotDiag = { enabled = false };
-
-local potDiagFrame = CreateFrame("Frame");
-
-local POT_DIAG_EVENTS = {
-    "CHAT_MSG_SPELL_SELF_BUFF",
-    "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS",
-    "CHAT_MSG_SPELL_PARTY_BUFF",
-    "CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS",
-    "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF",
-    "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS",
-    "CHAT_MSG_SPELL_SELF_DAMAGE",
-    "CHAT_MSG_SPELL_PARTY_DAMAGE",
-    "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE",
-    "CHAT_MSG_SPELL_DAMAGESHIELDS_ON_SELF",
-    "CHAT_MSG_SPELL_DAMAGESHIELDS_ON_OTHERS",
-    "CHAT_MSG_SYSTEM",
-};
-
-local POT_DIAG_KEYWORDS = {
-    "Tea", "tea", "Mana", "Invulnerability", "invulnerability",
-    "Invulnerable", "Restoration", "restoration", "potion", "Potion",
-};
-
-local function potDiagMatches(msg)
-    for _, kw in ipairs(POT_DIAG_KEYWORDS) do
-        if string.find(msg, kw, 1, true) then return true; end
-    end
-    return false;
-end
-
-local function potDiagCheckPatterns(msg)
-    local results = {};
-    if string.find(msg, "from.*Tea") then
-        table.insert(results, "|cff00ff00MATCH nordanaarTea|r");
-    end
-    if string.find(msg, "Restore Mana") then
-        table.insert(results, "|cff00ff00MATCH majorMana|r");
-    end
-    if string.find(msg, "Invulnerability") then
-        table.insert(results, "|cffff6600MATCH limitinvulpotion|r");
-    end
-    if table.getn(results) == 0 then
-        table.insert(results, "|cffaaaaааno pattern match|r");
-    end
-    return table.concat(results, ", ");
-end
-
-potDiagFrame:SetScript("OnEvent", function()
-    if not CQ_PotDiag.enabled then return; end
-    local msg = tostring(arg1 or "");
-    if not potDiagMatches(msg) then return; end
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[POTDIAG][" .. tostring(event) .. "]|r");
-    DEFAULT_CHAT_FRAME:AddMessage("|cffffffff  " .. msg .. "|r");
-    DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa  " .. potDiagCheckPatterns(msg) .. "|r");
-end);
-
-SLASH_CONQPOTDIAG1 = "/conqpotdiag";
-SlashCmdList["CONQPOTDIAG"] = function(msg)
-    msg = string.gsub(msg or "", "^%s*(.-)%s*$", "%1");
-    if msg == "on" or msg == "enable" then
-        CQ_PotDiag.enabled = true;
-        for _, ev in ipairs(POT_DIAG_EVENTS) do potDiagFrame:RegisterEvent(ev); end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PotDiag] ENABLED - use a Tea or LIP now|r");
-    elseif msg == "off" or msg == "disable" then
-        CQ_PotDiag.enabled = false;
-        for _, ev in ipairs(POT_DIAG_EVENTS) do potDiagFrame:UnregisterEvent(ev); end
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[PotDiag] DISABLED|r");
-    elseif msg == "test" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff=== PotDiag pattern test ===|r");
-        local tests = {
-            { msg = "You gain 983 Mana from Tea.",                    expect = "nordanaarTea" },
-            { msg = "Raidmate gains 913 Mana from Raidmate 's Tea.",  expect = "nordanaarTea" },
-            { msg = "Your Tea heals you for 611.",                    expect = "no match (heal tick, ignored)" },
-            { msg = "You gain Invulnerability.",                      expect = "limitinvulpotion" },
-            { msg = "Raidmate gains Invulnerability.",                expect = "limitinvulpotion" },
-            { msg = "You gain 1500 Mana from Restore Mana.",         expect = "majorMana" },
-        };
-        for _, t in ipairs(tests) do
-            local result = potDiagCheckPatterns(t.msg);
-            DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[expect: " .. t.expect .. "]|r " .. result);
-            DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff" .. t.msg .. "|r");
-        end
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/potdiag on   - start listening|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/potdiag off  - stop listening|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00/potdiag test - run pattern test|r");
-        DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa Then drink a Tea or LIP and watch what fires.|r");
-    end
-end
